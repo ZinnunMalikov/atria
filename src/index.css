@@ -1,0 +1,323 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Instrument+Serif:ital@0;1&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 30 40% 98%;
+    --foreground: 220 30% 12%;
+
+    --card: 30 30% 98%;
+    --card-foreground: 220 30% 12%;
+
+    --popover: 30 30% 98%;
+    --popover-foreground: 220 30% 12%;
+
+    --primary: 220 85% 52%;
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 30 25% 94%;
+    --secondary-foreground: 220 30% 12%;
+
+    --muted: 30 20% 94%;
+    --muted-foreground: 220 12% 42%;
+
+    --accent: 0 78% 55%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 14% 88%;
+    --input: 220 14% 88%;
+    --ring: 220 85% 52%;
+
+    --radius: 0.75rem;
+
+    /* Custom Atria colors */
+    --hero-cyan: 182 80% 52%;
+    --hero-magenta: 320 75% 60%;
+    --hero-amber: 28 95% 62%;
+    --hero-blue: 214 88% 55%;
+
+    --logo-red: 0 78% 55%;
+    --turing-ink: 220 28% 12%;
+    --turing-mist: 0 0% 98%;
+    --turing-rose: 0 80% 70%;
+    --turing-glow: 0 78% 55%;
+    
+    --navy: 224 45% 12%;
+    --navy-light: 222 35% 20%;
+    
+    --gradient-start: 185 85% 55%;
+    --gradient-mid: 310 80% 60%;
+    --gradient-end: 35 95% 60%;
+    
+    --sidebar-background: 0 0% 98%;
+    --sidebar-foreground: 240 5.3% 26.1%;
+    --sidebar-primary: 240 5.9% 10%;
+    --sidebar-primary-foreground: 0 0% 98%;
+    --sidebar-accent: 240 4.8% 95.9%;
+    --sidebar-accent-foreground: 240 5.9% 10%;
+    --sidebar-border: 220 13% 91%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+
+  .dark {
+    --background: 222 47% 6%;
+    --foreground: 210 40% 98%;
+
+    --card: 222 47% 8%;
+    --card-foreground: 210 40% 98%;
+
+    --popover: 222 47% 8%;
+    --popover-foreground: 210 40% 98%;
+
+    --primary: 210 40% 98%;
+    --primary-foreground: 222 47% 11%;
+
+    --secondary: 217 32% 17%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 217 32% 17%;
+    --muted-foreground: 215 20% 65%;
+
+    --accent: 0 78% 55%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 62% 30%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 217 32% 17%;
+    --input: 217 32% 17%;
+    --ring: 212 26% 83%;
+    
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Outfit', system-ui, sans-serif;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Instrument Serif', 'Outfit', system-ui, sans-serif;
+  }
+}
+
+@layer components {
+  .gradient-hero {
+    background:
+      radial-gradient(circle at 15% 20%, hsl(6 80% 86% / 0.9), transparent 45%),
+      radial-gradient(circle at 80% 10%, hsl(350 70% 90% / 0.7), transparent 45%),
+      radial-gradient(circle at 85% 70%, hsl(12 75% 88% / 0.6), transparent 50%),
+      linear-gradient(
+        135deg,
+        hsl(4 70% 96%) 0%,
+        hsl(8 75% 90%) 55%,
+        hsl(0 75% 94%) 100%
+      );
+    background-size: 400% 400%;
+    animation: gradient-flow 15s ease infinite;
+  }
+
+  .gradient-text {
+    background: linear-gradient(
+      135deg,
+      hsl(var(--hero-blue)) 0%,
+      hsl(var(--logo-red)) 50%,
+      hsl(var(--hero-cyan)) 100%
+    );
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .glass-card {
+    background: linear-gradient(
+      135deg,
+      hsl(var(--background) / 0.92),
+      hsl(var(--background) / 0.6)
+    );
+    backdrop-filter: blur(24px);
+    border: 1px solid hsl(var(--border) / 0.4);
+    box-shadow: 0 24px 60px -40px hsl(var(--navy) / 0.7);
+  }
+
+  .navy-section {
+    background: linear-gradient(
+      180deg,
+      hsl(var(--navy)) 0%,
+      hsl(var(--navy-light)) 100%
+    );
+  }
+
+  .feature-card {
+    @apply relative rounded-xl border border-border/50 bg-card p-6 transition-all duration-300;
+  }
+
+  .feature-card:hover {
+    @apply border-primary/30 shadow-lg;
+    transform: translateY(-4px);
+  }
+
+  .stat-card {
+    @apply relative pl-4 border-l-2 border-accent;
+  }
+
+  .turing-bg {
+    background:
+      radial-gradient(circle at 10% 20%, hsl(var(--turing-rose) / 0.25), transparent 45%),
+      radial-gradient(circle at 80% 10%, hsl(var(--turing-glow) / 0.18), transparent 50%),
+      radial-gradient(circle at 70% 80%, hsl(var(--turing-rose) / 0.18), transparent 55%),
+      linear-gradient(180deg, hsl(var(--turing-mist)) 0%, hsl(var(--background)) 100%);
+  }
+
+  .turing-grid {
+    background-image:
+      linear-gradient(hsl(var(--foreground) / 0.06) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--foreground) / 0.06) 1px, transparent 1px);
+    background-size: 80px 80px;
+  }
+
+  .turing-lines {
+    background-image:
+      repeating-linear-gradient(
+        135deg,
+        hsl(var(--turing-glow) / 0.18) 0 2px,
+        transparent 2px 16px
+      );
+    animation: line-drift 18s linear infinite;
+  }
+
+  .turing-fade {
+    mask-image: linear-gradient(180deg, black 0%, black 65%, transparent 100%);
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
+  .marquee {
+    animation: marquee-scroll 18s linear infinite;
+  }
+
+  .orbit-rotate {
+    animation: orbit-rotate 18s linear infinite;
+    transform-origin: center;
+  }
+
+  .orbit-rotate-slow {
+    animation-duration: 28s;
+  }
+
+  .orbit-counter {
+    animation: orbit-counter 18s linear infinite;
+    transform-origin: center;
+  }
+
+  .orbit-counter-slow {
+    animation-duration: 28s;
+  }
+
+  .orbit-item {
+    position: absolute;
+    inset: 0;
+    offset-path: circle(110px at 50% 50%);
+    offset-rotate: 0deg;
+    animation: orbit-path 18s linear infinite;
+  }
+
+  .orbit-item-slow {
+    animation-duration: 28s;
+  }
+}
+
+@keyframes gradient-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-20px);
+  }
+}
+
+@keyframes pulse-glow {
+  0%, 100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+@keyframes marquee-scroll {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes orbit-rotate {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes line-drift {
+  0% {
+    background-position: 0 0;
+  }
+  100% {
+    background-position: 240px 240px;
+  }
+}
+
+@keyframes orbit-counter {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(-360deg);
+  }
+}
+
+@keyframes orbit-path {
+  to {
+    offset-distance: 100%;
+  }
+}
