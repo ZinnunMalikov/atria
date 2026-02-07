@@ -208,6 +208,23 @@
   .turing-fade {
     mask-image: linear-gradient(180deg, black 0%, black 65%, transparent 100%);
   }
+
+  .hospital-landing {
+    background:
+      radial-gradient(circle at 15% 20%, hsl(175 80% 45% / 0.35), transparent 55%),
+      radial-gradient(circle at 80% 15%, hsl(204 85% 55% / 0.35), transparent 50%),
+      radial-gradient(circle at 70% 80%, hsl(16 90% 55% / 0.3), transparent 55%),
+      linear-gradient(160deg, hsl(222 47% 8%) 0%, hsl(220 35% 10%) 45%, hsl(218 40% 6%) 100%);
+  }
+
+  .acuity-clump {
+    animation: clump-drift 6s ease-in-out infinite;
+    transform-origin: center;
+  }
+
+  .acuity-delay {
+    animation-delay: 1.6s;
+  }
 }
 
 @layer utilities {
@@ -319,5 +336,14 @@
 @keyframes orbit-path {
   to {
     offset-distance: 100%;
+  }
+}
+
+@keyframes clump-drift {
+  0%, 100% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(8px, -6px);
   }
 }
