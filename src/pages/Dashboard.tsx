@@ -282,9 +282,9 @@ const Dashboard = () => {
   const getStatsForHospital = () => {
     if (!hasUploadsForOrg) {
       return [
-        { label: "Live Census", value: "-", detail: "Patients in ED" },
-        { label: "Average Wait", value: "-", detail: "Door to provider" },
-        { label: "Throughput", value: "-", detail: "Week over week" },
+        { label: "Acuity Clumps", value: "-", detail: "Active transfer bundles" },
+        { label: "Corridor Saturation", value: "-", detail: "Peak hallway load" },
+        { label: "Transfer Delay", value: "-", detail: "Median corridor delay" },
       ];
     }
 
@@ -299,9 +299,9 @@ const Dashboard = () => {
 
     const stats = hospitalStats[organizationKey] || hospitalStats["northside"];
     return [
-      { label: "Live Census", value: stats.census, detail: "Patients in ED" },
-      { label: "Average Wait", value: stats.wait, detail: "Door to provider" },
-      { label: "Throughput", value: stats.throughput, detail: "Week over week" },
+      { label: "Acuity Clumps", value: stats.census, detail: "Active transfer bundles" },
+      { label: "Corridor Saturation", value: stats.wait, detail: "Peak hallway load" },
+      { label: "Transfer Delay", value: stats.throughput, detail: "Median corridor delay" },
     ];
   };
 
@@ -718,10 +718,10 @@ const Dashboard = () => {
   };
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-background">
+    <main className="dark relative min-h-screen overflow-hidden bg-slate-950 text-slate-100">
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute inset-0 turing-grid opacity-30" />
-        <div className="absolute inset-0 turing-lines turing-fade opacity-30" />
+        <div className="absolute inset-0 hospital-landing" />
+        <div className="absolute inset-0 bg-slate-950/70" />
       </div>
       <div className="relative mx-auto max-w-7xl px-6 py-16">
         <div className="flex flex-col gap-8 lg:flex-row">
@@ -730,7 +730,7 @@ const Dashboard = () => {
               initial={{ opacity: 0, x: -16 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.6, ease: "easeOut" }}
-              className="flex h-full flex-col rounded-2xl border border-border/60 bg-gradient-to-b from-background/90 via-background/70 to-muted/30 p-5 shadow-sm backdrop-blur"
+              className="flex h-full flex-col rounded-2xl border border-white/10 bg-slate-900/80 p-5 shadow-sm backdrop-blur"
             >
               <div className="mb-4 flex items-center gap-3">
                 <img src="/atria-logo.png" alt="Atria logo" className="h-10 w-10" />
@@ -767,24 +767,24 @@ const Dashboard = () => {
 
               <div className="mt-6 border-t border-border/60 pt-5">
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Upload
+                  Inputs
                 </p>
 
                 {/* Hospital Config File Upload */}
                 <div className="mt-3">
                   <label className="flex items-center gap-2 text-sm font-medium text-foreground" htmlFor="config-upload">
                     <FileText className="h-4 w-4" />
-                    Hospital Config (.txt)
+                    Floor Plan Graph (.txt)
                   </label>
                   <input
                     id="config-upload"
                     type="file"
                     accept=".txt"
                     onChange={handleConfigFileUpload}
-                    className="mt-2 block w-full text-xs text-muted-foreground file:mr-3 file:rounded-lg file:border-0 file:bg-foreground file:px-3 file:py-2 file:text-xs file:font-semibold file:text-background hover:file:bg-foreground/90"
+                    className="mt-2 block w-full text-xs text-muted-foreground file:mr-3 file:rounded-lg file:border-0 file:bg-emerald-300 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-slate-900 hover:file:bg-emerald-200"
                   />
                   <p className="mt-1 text-[10px] text-muted-foreground">
-                    Format: dimensions, grid, treatment rooms
+                    Format: nodes, edges, treatment rooms
                   </p>
                 </div>
 
@@ -792,17 +792,17 @@ const Dashboard = () => {
                 <div className="mt-4">
                   <label className="flex items-center gap-2 text-sm font-medium text-foreground" htmlFor="video-upload">
                     <Video className="h-4 w-4" />
-                    Video Feed
+                    Corridor Feed
                   </label>
                   <input
                     id="video-upload"
                     type="file"
                     accept="video/*"
                     onChange={handleVideoUpload}
-                    className="mt-2 block w-full text-xs text-muted-foreground file:mr-3 file:rounded-lg file:border-0 file:bg-foreground file:px-3 file:py-2 file:text-xs file:font-semibold file:text-background hover:file:bg-foreground/90"
+                    className="mt-2 block w-full text-xs text-muted-foreground file:mr-3 file:rounded-lg file:border-0 file:bg-emerald-300 file:px-3 file:py-2 file:text-xs file:font-semibold file:text-slate-900 hover:file:bg-emerald-200"
                   />
                   <p className="mt-1 text-[10px] text-muted-foreground">
-                    Video processing coming soon
+                    Corridor video processing coming soon
                   </p>
                 </div>
 
@@ -839,7 +839,7 @@ const Dashboard = () => {
                 <div className="border-t border-border/60 pt-4">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <button className="w-full rounded-xl border border-border/60 bg-background/80 px-4 py-3 text-left transition hover:bg-background">
+                      <button className="w-full rounded-xl border border-white/10 bg-slate-950/70 px-4 py-3 text-left transition hover:bg-slate-950/90">
                         <p className="text-sm font-semibold text-foreground">{formattedName}</p>
                         <p className="text-xs text-muted-foreground">{role}</p>
                       </button>
@@ -868,14 +868,14 @@ const Dashboard = () => {
             >
               <div>
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Client Console
+                  Operations Console
                 </p>
-                <h1 className="mt-2 text-3xl font-semibold text-foreground">Dashboard</h1>
+                <h1 className="mt-2 text-3xl font-semibold text-foreground">Surge Simulation Workspace</h1>
               </div>
               <div className="flex flex-wrap items-center gap-3">
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button className="rounded-full bg-gradient-to-r from-foreground to-foreground/90 text-background shadow-sm">
+                    <Button className="rounded-full bg-emerald-300 text-slate-900 shadow-sm hover:bg-emerald-200">
                       Export report
                     </Button>
                   </DropdownMenuTrigger>
@@ -901,7 +901,7 @@ const Dashboard = () => {
               </div>
             </motion.div>
 
-            <Card className="mb-10 w-full max-w-xl border-border/60 bg-gradient-to-br from-[hsl(0_78%_55%_/_0.12)] via-background to-muted/20">
+            <Card className="mb-10 w-full max-w-xl border-white/10 bg-gradient-to-br from-emerald-300/15 via-slate-900/70 to-transparent">
               <CardHeader>
                 <CardTitle className="font-display text-3xl font-semibold text-foreground">
                   Welcome, {displayName || formattedName}
@@ -909,10 +909,52 @@ const Dashboard = () => {
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground">
-                  Get familiar with your dashboard and follow the steps below to get started.
+                  Upload a graph-based floor plan, select a surge scenario, and study corridor friction before a single wall
+                  is built.
                 </p>
               </CardContent>
             </Card>
+
+            <motion.section
+              id="scenarios"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, ease: "easeOut", delay: 0.15 }}
+              className="mb-10 grid gap-4 md:grid-cols-3"
+            >
+              {[
+                {
+                  title: "Mass-Casualty Incident",
+                  detail: "ED, imaging, and OR corridors spike within minutes.",
+                  tag: "MCI",
+                },
+                {
+                  title: "Pandemic Surge",
+                  detail: "Sustained throughput with isolation routing constraints.",
+                  tag: "Pandemic",
+                },
+                {
+                  title: "Extreme Transfers",
+                  detail: "Multiple ICU-level moves with equipment-heavy clumps.",
+                  tag: "Acuity+",
+                },
+              ].map((card) => (
+                <Card
+                  key={card.title}
+                  className="border-white/10 bg-slate-900/70"
+                >
+                  <CardHeader>
+                    <CardTitle className="text-base">{card.title}</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <span className="inline-flex items-center rounded-full border border-white/15 px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-white/60">
+                      {card.tag}
+                    </span>
+                    <p className="mt-3 text-sm text-muted-foreground">{card.detail}</p>
+                  </CardContent>
+                </Card>
+              ))}
+            </motion.section>
 
             <motion.section
               id="stats"
@@ -924,9 +966,9 @@ const Dashboard = () => {
               {statsData.map((stat) => (
                 <Card
                   key={stat.label}
-                  className="relative overflow-hidden border-border/60 bg-card/80 shadow-sm"
+                  className="relative overflow-hidden border-white/10 bg-slate-900/70 shadow-sm"
                 >
-                  <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[hsl(0_78%_55%)] to-transparent" />
+                  <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-emerald-300 to-transparent" />
                   <CardHeader>
                     <CardTitle>{stat.label}</CardTitle>
                   </CardHeader>
@@ -945,6 +987,19 @@ const Dashboard = () => {
               transition={{ duration: 0.6, ease: "easeOut", delay: 0.3 }}
               className="mt-10"
             >
+              <div className="mb-4 flex items-end justify-between gap-4">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Heatmap Output
+                  </p>
+                  <h2 className="mt-2 text-2xl font-semibold text-foreground">
+                    Corridor friction under surge load
+                  </h2>
+                </div>
+                <span className="rounded-full border border-white/15 px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-white/60">
+                  Live
+                </span>
+              </div>
               <HeatmapSimulation config={simulationConfig} />
             </motion.section>
 
@@ -957,12 +1012,12 @@ const Dashboard = () => {
             >
               <Card>
                 <CardHeader>
-                  <CardTitle>Hospital Info</CardTitle>
+                  <CardTitle>Layout Insights</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-sm text-muted-foreground">
-                      Organization
+                      Facility
                     </p>
                     <p className="text-sm font-semibold text-foreground">
                       {organizationLabel || organization || "Not set"}

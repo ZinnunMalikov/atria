@@ -90,21 +90,20 @@ const Login = () => {
   };
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-background">
+    <main className="dark relative min-h-screen overflow-hidden bg-slate-950 text-slate-100">
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute inset-0 turing-bg" />
-        <div className="absolute inset-0 turing-grid opacity-35" />
-        <div className="absolute inset-0 turing-lines turing-fade opacity-50" />
+        <div className="absolute inset-0 hospital-landing" />
+        <div className="absolute inset-0 bg-slate-950/60" />
       </div>
       <div className="relative mx-auto flex min-h-screen max-w-6xl items-center justify-center px-6 py-16">
-        <div className="w-full max-w-xl rounded-3xl border border-border/60 bg-card/80 p-8 shadow-[0_30px_80px_-50px_rgba(15,23,42,0.6)] backdrop-blur">
+        <div className="w-full max-w-xl rounded-3xl border border-white/10 bg-slate-900/80 p-8 shadow-[0_30px_80px_-50px_rgba(15,23,42,0.6)] backdrop-blur">
           <div className="mb-8">
             <img src="/atria-logo.png" alt="Atria logo" className="mb-4 h-12 w-12" />
-            <p className="text-sm font-medium text-muted-foreground">Client Access</p>
-            <h1 className="mt-2 text-3xl font-semibold text-foreground">
+            <p className="text-sm font-medium text-white/60">Client Access</p>
+            <h1 className="mt-2 text-3xl font-semibold text-white">
               Sign in to your Atria workspace
             </h1>
-            <p className="mt-2 text-sm text-muted-foreground">
+            <p className="mt-2 text-sm text-white/60">
               Enter your credentials to view live operational dashboards and
               analytics.
             </p>
@@ -122,8 +121,9 @@ const Login = () => {
                   value={mfaCode}
                   onChange={(event) => setMfaCode(event.target.value)}
                   required
+                  className="border-white/15 bg-slate-950/60 text-white placeholder:text-white/30 focus-visible:ring-emerald-300/60"
                 />
-                <p className="text-xs text-muted-foreground">
+                <p className="text-xs text-white/50">
                   Enter the 6-digit code from your authenticator app.
                 </p>
               </div>
@@ -138,6 +138,7 @@ const Login = () => {
                     value={email}
                     onChange={(event) => setEmail(event.target.value)}
                     required
+                    className="border-white/15 bg-slate-950/60 text-white placeholder:text-white/30 focus-visible:ring-emerald-300/60"
                   />
                 </div>
 
@@ -150,13 +151,17 @@ const Login = () => {
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                     required
+                    className="border-white/15 bg-slate-950/60 text-white placeholder:text-white/30 focus-visible:ring-emerald-300/60"
                   />
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="organization">Hospital or Medical Group</Label>
                   <Select value={organization} onValueChange={setOrganization}>
-                    <SelectTrigger id="organization">
+                    <SelectTrigger
+                      id="organization"
+                      className="border-white/15 bg-slate-950/60 text-white focus:ring-emerald-300/60"
+                    >
                       <SelectValue placeholder="Select organization" />
                     </SelectTrigger>
                     <SelectContent>
@@ -176,7 +181,7 @@ const Login = () => {
             ) : null}
 
             <Button
-              className="w-full bg-foreground text-background hover:bg-foreground/90"
+              className="w-full bg-emerald-300 text-slate-900 hover:bg-emerald-200"
               disabled={needsMfa ? isVerifying : isSubmitting}
             >
               {needsMfa
@@ -187,7 +192,7 @@ const Login = () => {
                 ? "Signing in..."
                 : "Sign in"}
             </Button>
-            <p className="text-xs text-muted-foreground text-center">
+            <p className="text-xs text-white/40 text-center">
               Powered by Supabase Authentication
             </p>
           </form>
