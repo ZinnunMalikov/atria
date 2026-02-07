@@ -1,0 +1,1574 @@
+import { useState, useCallback, useRef, useEffect } from "react";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Play, Pause, RotateCcw, AlertTriangle, CheckCircle } from "lucide-react";
+
+// ============================================================================
+// TYPES - Matching Python engine.py exactly
+// ============================================================================
+
+type Position = [number, number];
+
+interface Patient {
+  id: number;
+  severity: number;
+  position: Position;
+}
+
+interface Nurse {
+  id: number;
+  state: number; // 0 = idle, 1 = busy
+  idlePosition: Position;
+  position: Position;
+}
+
+interface Doctor {
+  id: number;
+  state: number;
+  idlePosition: Position;
+  position: Position;
+}
+
+interface TreatmentRoom {
+  severityType: number; // 0 = low, 1 = high
+  occupancy: number;
+}
+
+interface Task {
+  type: string;
+  nurse?: Nurse;
+  doctor?: Doctor;
+  patient?: Patient;
+  room?: Position;
+  stage?: string;
+  path: Position[];
+  pathIndex: number;
+  treatmentTime: number;
+  treatmentCounter?: number;
+}
+
+interface SimulationState {
+  hospital: number[][];
+  nurses: Nurse[];
+  doctors: Doctor[];
+  treatmentRooms: Map<string, TreatmentRoom>;
+  spawnPoint: Position;
+  waitingRoomPos: Position;
+  pattern: number[];
+  patternIndex: number;
+  waitingRoom: Patient[];
+  tick: number;
+  activeTasks: Task[];
+  nextPatientId: number;
+  patientCount: number; // Matches Python's Patient.count
+}
+
+interface EntityPosition {
+  id: string;
+  type: "nurse" | "doctor" | "patient";
+  position: Position;
+  severity?: number;
+}
+
+interface CongestionPoint {
+  row: number;
+  col: number;
+  congestion: number;
+}
+
+interface AnomalyResults {
+  statistics: {
+    mean: number;
+    std: number;
+    median: number;
+    q1: number;
+    q3: number;
+    iqr: number;
+  };
+  anomalies: {
+    highCongestion: CongestionPoint[];
+    deadZones: CongestionPoint[];
+    lowTraffic: CongestionPoint[];
+  };
+  normal: CongestionPoint[];
+}
+
+// Exported config type for external use
+export interface SimulationConfig {
+  hospital: number[][];
+  lowSeverityRooms: Position[];
+  highSeverityRooms: Position[];
+  nursePositions?: Position[];
+  doctorPositions?: Position[];
+}
+
+interface HeatmapSimulationProps {
+  config?: SimulationConfig;
+}
+
+// Colors matching Python visualizer.py
+const COLORS = {
+  wall: "#2C3E50",
+  spawn: "#95A5A6",
+  free: "#ECF0F1",
+  waiting: "#F39C12",
+  treatmentLow: "#3498DB",
+  treatmentHigh: "#E74C3C",
+  nurse: "#2ECC71",
+  doctor: "#9B59B6",
+  patientLow: "#1ABC9C",
+  patientHigh: "#C0392B",
+};
+
+// ============================================================================
+// A* PATHFINDING - Matching Python engine.py exactly
+// ============================================================================
+
+function heuristic(a: Position, b: Position): number {
+  return Math.abs(a[0] - b[0]) + Math.abs(a[1] - b[1]);
+}
+
+function posKey(pos: Position): string {
+  return `${pos[0]},${pos[1]}`;
+}
+
+function posEqual(a: Position, b: Position): boolean {
+  return a[0] === b[0] && a[1] === b[1];
+}
+
+function getPath(grid: number[][], start: Position, end: Position): Position[] {
+  const rows = grid.length;
+  const cols = grid[0].length;
+
+  // Priority queue: [f_score, position]
+  const openSet: [number, Position][] = [[0, start]];
+  const cameFrom = new Map<string, Position>();
+  const gScore = new Map<string, number>();
+  const fScore = new Map<string, number>();
+
+  gScore.set(posKey(start), 0);
+  fScore.set(posKey(start), heuristic(start, end));
+
+  // Directions: up, down, left, right - same as Python
+  const directions: Position[] = [[-1, 0], [1, 0], [0, -1], [0, 1]];
+
+  while (openSet.length > 0) {
+    // Sort by f-score and get lowest
+    openSet.sort((a, b) => a[0] - b[0]);
+    const [, curr] = openSet.shift()!;
+
+    if (posEqual(curr, end)) {
+      // Reconstruct path - same as Python reconstruct_path()
+      const path: Position[] = [curr];
+      let current = curr;
+      while (cameFrom.has(posKey(current))) {
+        current = cameFrom.get(posKey(current))!;
+        path.unshift(current);
+      }
+      return path;
+    }
+
+    for (const d of directions) {
+      const neighbor: Position = [curr[0] + d[0], curr[1] + d[1]];
+
+      // Bounds check
+      if (neighbor[0] < 0 || neighbor[0] >= rows || neighbor[1] < 0 || neighbor[1] >= cols) {
+        continue;
+      }
+
+      const cellValue = grid[neighbor[0]][neighbor[1]];
+
+      // Skip walls (-2)
+      if (cellValue === -2) continue;
+
+      // Skip spawn/treatment rooms unless destination - matches Python logic
+      if ((cellValue === -1 || cellValue === 4 || cellValue === 5) && !posEqual(neighbor, end)) {
+        continue;
+      }
+
+      const tentGScore = (gScore.get(posKey(curr)) ?? Infinity) + 1;
+
+      if (tentGScore < (gScore.get(posKey(neighbor)) ?? Infinity)) {
+        cameFrom.set(posKey(neighbor), curr);
+        gScore.set(posKey(neighbor), tentGScore);
+        fScore.set(posKey(neighbor), tentGScore + heuristic(neighbor, end));
+
+        // Check if already in open set
+        const inOpenSet = openSet.some(([, pos]) => posEqual(pos, neighbor));
+        if (!inOpenSet) {
+          openSet.push([fScore.get(posKey(neighbor))!, neighbor]);
+        }
+      }
+    }
+  }
+
+  return [];
+}
+
+// ============================================================================
+// SIMULATION ENGINE - Matching Python main.py exactly
+// ============================================================================
+
+function createSimulation(
+  hospital: number[][],
+  nursePositions: Position[],
+  doctorPositions: Position[],
+  treatmentRoomsConfig: Map<string, { severityType: number; occupancy: number }>,
+  spawnPoint: Position = [0, 0],
+  waitingRoomPos: Position = [0, 1],
+  pattern: number[] = [2, 5, 3, 1, 5, 2, 3, 1, 5, 3]
+): SimulationState {
+  // Deep copy hospital and mark treatment rooms - matches Python
+  const hospitalCopy = hospital.map(row => [...row]);
+
+  treatmentRoomsConfig.forEach((info, key) => {
+    const [r, c] = key.split(",").map(Number);
+    hospitalCopy[r][c] = info.severityType === 0 ? 4 : 5;
+  });
+
+  // Create nurses - matches Python Nurse class
+  const nurses: Nurse[] = nursePositions.map((pos, i) => ({
+    id: i + 1,
+    state: 0,
+    idlePosition: [...pos] as Position,
+    position: [...pos] as Position,
+  }));
+
+  // Create doctors - matches Python Doctor class
+  const doctors: Doctor[] = doctorPositions.map((pos, i) => ({
+    id: i + 1,
+    state: 0,
+    idlePosition: [...pos] as Position,
+    position: [...pos] as Position,
+  }));
+
+  const treatmentRooms = new Map<string, TreatmentRoom>();
+  treatmentRoomsConfig.forEach((info, key) => {
+    treatmentRooms.set(key, { ...info });
+  });
+
+  return {
+    hospital: hospitalCopy,
+    nurses,
+    doctors,
+    treatmentRooms,
+    spawnPoint,
+    waitingRoomPos,
+    pattern,
+    patternIndex: 0,
+    waitingRoom: [],
+    tick: 0,
+    activeTasks: [],
+    nextPatientId: 1,
+    patientCount: 0,
+  };
+}
+
+// Matches Python spawn_patient()
+function spawnPatient(state: SimulationState): void {
+  const severity = state.pattern[state.patternIndex];
+  state.patternIndex = (state.patternIndex + 1) % state.pattern.length;
+
+  const patient: Patient = {
+    id: state.nextPatientId,
+    severity,
+    position: [...state.spawnPoint] as Position,
+  };
+
+  state.nextPatientId++;
+  state.patientCount++;
+
+  // heapq.heappush - insert and maintain max-heap by severity
+  state.waitingRoom.push(patient);
+  state.waitingRoom.sort((a, b) => b.severity - a.severity);
+}
+
+// Matches Python get_idle_nurse()
+function getIdleNurse(state: SimulationState): Nurse | null {
+  for (const nurse of state.nurses) {
+    if (nurse.state === 0) return nurse;
+  }
+  return null;
+}
+
+// Matches Python get_idle_doctor()
+function getIdleDoctor(state: SimulationState): Doctor | null {
+  const idleDocs = state.doctors.filter(d => d.state === 0);
+  if (idleDocs.length > 0) {
+    return idleDocs[Math.floor(Math.random() * idleDocs.length)];
+  }
+  return null;
+}
+
+// Matches Python get_free_room()
+function getFreeRoom(state: SimulationState, severity: number): Position | null {
+  const severityType = severity < 4 ? 0 : 1;
+  for (const [key, room] of state.treatmentRooms) {
+    if (room.severityType === severityType && room.occupancy === 0) {
+      const [r, c] = key.split(",").map(Number);
+      return [r, c];
+    }
+  }
+  return null;
+}
+
+// Matches Python patient_to_room()
+function patientToRoom(state: SimulationState): void {
+  if (state.waitingRoom.length === 0) return;
+
+  const nurse = getIdleNurse(state);
+  if (!nurse) return;
+
+  // heapq.heappop - get highest severity patient
+  const patient = state.waitingRoom[0];
+  const roomPos = getFreeRoom(state, patient.severity);
+
+  if (!roomPos) return;
+
+  // Remove from waiting room
+  state.waitingRoom.shift();
+
+  const roomKey = posKey(roomPos);
+  state.treatmentRooms.get(roomKey)!.occupancy = 1;
+  nurse.state = 1;
+
+  const task: Task = {
+    type: "escort_patient",
+    nurse,
+    patient,
+    room: roomPos,
+    stage: "to_waiting_room",
+    path: getPath(state.hospital, nurse.position, state.waitingRoomPos),
+    pathIndex: 0,
+    treatmentTime: 5,
+  };
+
+  state.activeTasks.push(task);
+}
+
+// Matches Python move_along_path()
+function moveAlongPath(entity: { position: Position }, task: Task): boolean {
+  if (!task.path || task.path.length === 0) return true;
+
+  if (task.pathIndex < task.path.length) {
+    entity.position = [...task.path[task.pathIndex]] as Position;
+    task.pathIndex++;
+    return false;
+  }
+  return true;
+}
+
+// Matches Python process_tasks() exactly
+function processTasks(state: SimulationState): void {
+  const completedTasks: Task[] = [];
+
+  for (const task of state.activeTasks) {
+    if (task.type === "escort_patient" && task.nurse && task.patient) {
+      if (task.stage === "to_waiting_room") {
+        if (moveAlongPath(task.nurse, task)) {
+          task.stage = "escort_to_room";
+          task.path = getPath(state.hospital, state.waitingRoomPos, task.room!);
+          task.pathIndex = 0;
+          task.patient.position = [...state.waitingRoomPos] as Position;
+        }
+      } else if (task.stage === "escort_to_room") {
+        if (moveAlongPath(task.nurse, task)) {
+          task.patient.position = [...task.room!] as Position;
+
+          if (task.patient.severity >= 4) {
+            // High severity: nurse returns, doctor takes over
+            task.stage = "nurse_return";
+            task.path = getPath(state.hospital, task.nurse.position, task.nurse.idlePosition);
+            task.pathIndex = 0;
+          } else {
+            // Low severity: nurse treats
+            task.stage = "treating";
+            task.treatmentCounter = 0;
+          }
+        } else {
+          // Patient follows nurse
+          task.patient.position = [...task.nurse.position] as Position;
+        }
+      } else if (task.stage === "nurse_return") {
+        if (moveAlongPath(task.nurse, task)) {
+          task.nurse.state = 0;
+
+          const doctor = getIdleDoctor(state);
+          if (doctor) {
+            doctor.state = 1;
+            const doctorTask: Task = {
+              type: "doctor_treat",
+              doctor,
+              patient: task.patient,
+              room: task.room,
+              stage: "to_room",
+              path: getPath(state.hospital, doctor.position, task.room!),
+              pathIndex: 0,
+              treatmentTime: task.treatmentTime,
+              treatmentCounter: 0,
+            };
+            state.activeTasks.push(doctorTask);
+          } else {
+            const waitingTask: Task = {
+              type: "waiting_for_doctor",
+              patient: task.patient,
+              room: task.room,
+              path: [],
+              pathIndex: 0,
+              treatmentTime: task.treatmentTime,
+            };
+            state.activeTasks.push(waitingTask);
+          }
+          completedTasks.push(task);
+        }
+      } else if (task.stage === "treating") {
+        task.treatmentCounter = (task.treatmentCounter ?? 0) + 1;
+        if (task.treatmentCounter >= task.treatmentTime) {
+          task.nurse!.state = 0;
+          task.stage = "patient_discharge";
+          task.patient.position = [...task.room!] as Position;
+          const dischargePath = getPath(state.hospital, task.room!, state.spawnPoint);
+          task.path = dischargePath.length > 0 ? dischargePath : [state.spawnPoint];
+          task.pathIndex = 0;
+          state.treatmentRooms.get(posKey(task.room!))!.occupancy = 0;
+        }
+      } else if (task.stage === "patient_discharge") {
+        if (moveAlongPath(task.patient, task)) {
+          state.patientCount--;
+          completedTasks.push(task);
+        }
+      }
+    } else if (task.type === "waiting_for_doctor" && task.patient) {
+      const doctor = getIdleDoctor(state);
+      if (doctor) {
+        doctor.state = 1;
+        const doctorTask: Task = {
+          type: "doctor_treat",
+          doctor,
+          patient: task.patient,
+          room: task.room,
+          stage: "to_room",
+          path: getPath(state.hospital, doctor.position, task.room!),
+          pathIndex: 0,
+          treatmentTime: task.treatmentTime,
+          treatmentCounter: 0,
+        };
+        state.activeTasks.push(doctorTask);
+        completedTasks.push(task);
+      }
+    } else if (task.type === "doctor_treat" && task.doctor && task.patient) {
+      if (task.stage === "to_room") {
+        if (moveAlongPath(task.doctor, task)) {
+          task.stage = "treating";
+        }
+      } else if (task.stage === "treating") {
+        task.treatmentCounter = (task.treatmentCounter ?? 0) + 1;
+        if (task.treatmentCounter >= task.treatmentTime) {
+          task.stage = "doctor_return";
+          task.path = getPath(state.hospital, task.doctor.position, task.doctor.idlePosition);
+          task.pathIndex = 0;
+          state.treatmentRooms.get(posKey(task.room!))!.occupancy = 0;
+        }
+      } else if (task.stage === "doctor_return") {
+        if (moveAlongPath(task.doctor, task)) {
+          task.doctor.state = 0;
+          task.stage = "patient_discharge";
+          task.patient.position = [...task.room!] as Position;
+          const dischargePath = getPath(state.hospital, task.room!, state.spawnPoint);
+          task.path = dischargePath.length > 0 ? dischargePath : [state.spawnPoint];
+          task.pathIndex = 0;
+        }
+      } else if (task.stage === "patient_discharge") {
+        if (moveAlongPath(task.patient, task)) {
+          state.patientCount--;
+          completedTasks.push(task);
+        }
+      }
+    }
+  }
+
+  state.activeTasks = state.activeTasks.filter(t => !completedTasks.includes(t));
+}
+
+// ============================================================================
+// ANOMALY DETECTION - Bottleneck threshold: congestion > 2.5
+// ============================================================================
+
+const BOTTLENECK_THRESHOLD = 2.5;
+
+function runLocalAnomalyDetection(validPoints: CongestionPoint[]): AnomalyResults {
+  const congestionValues = validPoints.map(p => p.congestion);
+
+  const mean = congestionValues.reduce((a, b) => a + b, 0) / congestionValues.length;
+  const sortedValues = [...congestionValues].sort((a, b) => a - b);
+  const median = sortedValues[Math.floor(sortedValues.length / 2)];
+
+  const variance = congestionValues.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / congestionValues.length;
+  const std = Math.sqrt(variance);
+
+  const q1Index = Math.floor(sortedValues.length * 0.25);
+  const q3Index = Math.floor(sortedValues.length * 0.75);
+  const q1 = sortedValues[q1Index];
+  const q3 = sortedValues[q3Index];
+  const iqr = q3 - q1;
+
+  const highCongestion: CongestionPoint[] = [];
+  const normal: CongestionPoint[] = [];
+
+  // Simple threshold: anything over 2.5 is a bottleneck
+  for (const point of validPoints) {
+    if (point.congestion > BOTTLENECK_THRESHOLD) {
+      highCongestion.push(point);
+    } else {
+      normal.push(point);
+    }
+  }
+
+  highCongestion.sort((a, b) => b.congestion - a.congestion);
+
+  return {
+    statistics: { mean, std, median, q1, q3, iqr },
+    anomalies: { highCongestion, deadZones: [], lowTraffic: [] },
+    normal,
+  };
+}
+
+// ============================================================================
+// HEATMAP SIMULATION COMPONENT
+// ============================================================================
+
+// Default hospital layout from sim/main.py
+const DEFAULT_HOSPITAL: number[][] = [
+  [-1, 1, -2, -2, -2],
+  [-2, 0, 0, 0, -2],
+  [-2, 0, 0, 0, -2],
+  [-2, 0, 0, 0, -2],
+];
+
+const DEFAULT_LOW_SEVERITY_ROOMS: Position[] = [[1, 0]];
+const DEFAULT_HIGH_SEVERITY_ROOMS: Position[] = [[3, 4]];
+
+// ============================================================================
+// SUGGESTIONS PROMPT COMPONENT
+// ============================================================================
+
+interface SuggestionsPromptProps {
+  hospital: number[][];
+  avgCongestionGrid: number[][];
+  anomalyResults: AnomalyResults | null;
+  simState: SimulationState | null;
+}
+
+function SuggestionsPrompt({ hospital, avgCongestionGrid, anomalyResults, simState }: SuggestionsPromptProps) {
+  const [isLoading, setIsLoading] = useState(false);
+  const [suggestions, setSuggestions] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  if (!simState) return null;
+
+  const rows = hospital.length;
+  const cols = hospital[0]?.length ?? 0;
+
+  // Extract spawn and waiting room positions
+  const spawnPoint = simState.spawnPoint;
+  const waitingRoomPos = simState.waitingRoomPos;
+
+  // Separate treatment rooms by severity
+  const lowSeverityRooms: Array<{ position: Position; severity_type: number }> = [];
+  const highSeverityRooms: Array<{ position: Position; severity_type: number }> = [];
+
+  simState.treatmentRooms.forEach((info, key) => {
+    const [r, c] = key.split(",").map(Number);
+    const pos: Position = [r, c];
+    const roomData = { position: pos, severity_type: info.severityType };
+    if (info.severityType === 0) {
+      lowSeverityRooms.push(roomData);
+    } else {
+      highSeverityRooms.push(roomData);
+    }
+  });
+
+  // Get nurse and doctor positions
+  const nurseIdlePositions = simState.nurses.map(n => n.idlePosition);
+  const doctorIdlePositions = simState.doctors.map(d => d.idlePosition);
+
+  // Extract congestion anomalies
+  let congestedPoints: Array<{ row: number; col: number; congestion: number }> = [];
+  if (anomalyResults?.anomalies?.highCongestion) {
+    congestedPoints = anomalyResults.anomalies.highCongestion
+      .sort((a, b) => b.congestion - a.congestion)
+      .slice(0, 10);
+  }
+
+  // If no anomalies found, get top congestion cells manually
+  if (congestedPoints.length === 0) {
+    const flatCongestion: Array<{ row: number; col: number; congestion: number }> = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (avgCongestionGrid[r][c] > 0) {
+          flatCongestion.push({ row: r, col: c, congestion: avgCongestionGrid[r][c] });
+        }
+      }
+    }
+    flatCongestion.sort((a, b) => b.congestion - a.congestion);
+    congestedPoints = flatCongestion.slice(0, 10);
+  }
+
+  // Build the prompt (matching Python generate_gemini_improvement_prompt)
+  const promptLines = [
+    "=" + "=".repeat(69),
+    "AI PROMPT: ER HOSPITAL SETUP IMPROVEMENT REQUEST",
+    "=" + "=".repeat(69),
+    "",
+    "You are an expert in emergency room operations and hospital layout optimization.",
+    "Analyze the following hospital simulation setup and congestion data, then suggest",
+    "improvements to reduce bottlenecks and improve patient flow.",
+    "",
+    "IMPORTANT: Provide a DETAILED but CONCISE response. Use clear formatting with headers,",
+    "bullet points, and numbered lists. Focus on actionable recommendations.",
+    "",
+    "-".repeat(70),
+    "HOSPITAL LAYOUT",
+    "-".repeat(70),
+    `Grid dimensions: ${rows} rows x ${cols} columns`,
+    "",
+    "Grid encoding:",
+    "  -2 = Wall (impassable)",
+    "  -1 = Spawn point",
+    "   0 = Free space (walkable corridor)",
+    "   1 = Waiting room",
+    "   4 = Low severity treatment room",
+    "   5 = High severity treatment room",
+    "",
+    "Hospital grid:",
+  ];
+
+  hospital.forEach((row, r) => {
+    promptLines.push(`  Row ${r}: [${row.join(", ")}]`);
+  });
+
+  promptLines.push(
+    "",
+    "-".repeat(70),
+    "KEY LOCATIONS",
+    "-".repeat(70),
+    `Spawn point (patient entry): (${spawnPoint[0]}, ${spawnPoint[1]})`,
+    `Waiting room: (${waitingRoomPos[0]}, ${waitingRoomPos[1]})`,
+    "",
+    `Nurse idle positions (${nurseIdlePositions.length} nurses): ${JSON.stringify(nurseIdlePositions)}`,
+    `Doctor idle positions (${doctorIdlePositions.length} doctors): ${JSON.stringify(doctorIdlePositions)}`,
+    "",
+    `LOW SEVERITY treatment rooms (${lowSeverityRooms.length}):`
+  );
+
+  lowSeverityRooms.forEach(room => {
+    promptLines.push(`  - Position: (${room.position[0]}, ${room.position[1]})`);
+  });
+
+  promptLines.push(`\nHIGH SEVERITY treatment rooms (${highSeverityRooms.length}):`);
+  highSeverityRooms.forEach(room => {
+    promptLines.push(`  - Position: (${room.position[0]}, ${room.position[1]})`);
+  });
+
+  const maxCongestion = Math.max(...avgCongestionGrid.flat());
+  const avgCongestionFlat = avgCongestionGrid.flat();
+  const meanCongestion = avgCongestionFlat.reduce((a, b) => a + b, 0) / avgCongestionFlat.length;
+
+  promptLines.push(
+    "",
+    "-".repeat(70),
+    "CONGESTION ANALYSIS - HIGHEST ANOMALIES",
+    "-".repeat(70),
+    `Total grid cells analyzed: ${rows * cols}`,
+    `Max congestion: ${maxCongestion.toFixed(4)}`,
+    `Mean congestion: ${meanCongestion.toFixed(4)}`,
+    "",
+    "Top congestion hotspots (potential bottlenecks):"
+  );
+
+  congestedPoints.forEach((point, i) => {
+    promptLines.push(`  ${i + 1}. Grid position (${point.row}, ${point.col}): congestion = ${point.congestion.toFixed(4)}`);
+  });
+
+  promptLines.push(
+    "",
+    "-".repeat(70),
+    "REQUEST",
+    "-".repeat(70),
+    "Based on this hospital setup and congestion data, please provide:",
+    "",
+    "1. BOTTLENECK DIAGNOSIS:",
+    "   - What are the likely causes of congestion at the identified hotspots?",
+    "   - How does the current layout contribute to these bottlenecks?",
+    "",
+    "2. LAYOUT IMPROVEMENTS:",
+    "   - Suggest specific changes to room positions or corridor layout",
+    "   - Recommend optimal placement for treatment rooms relative to spawn/waiting",
+    "",
+    "3. STAFFING RECOMMENDATIONS:",
+    "   - Should nurse/doctor positions be adjusted?",
+    "   - Are there enough staff for the current patient flow?",
+    "",
+    "4. OPERATIONAL CHANGES:",
+    "   - Routing improvements for patient flow",
+    "   - Queue management suggestions",
+    "",
+    "=" + "=".repeat(69),
+  );
+
+  const promptText = promptLines.join("\n");
+
+  const fetchSuggestions = async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+
+      if (!apiKey) {
+        throw new Error("Gemini API key not found. Please set VITE_GEMINI_API_KEY in your .env file.");
+      }
+
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [
+                  {
+                    text: promptText,
+                  },
+                ],
+              },
+            ],
+            generationConfig: {
+              temperature: 0.7,
+              maxOutputTokens: 10000,
+            },
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error?.message || "Failed to fetch suggestions from Gemini API");
+      }
+
+      const data = await response.json();
+      const generatedText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+      if (!generatedText) {
+        throw new Error("No suggestions generated");
+      }
+
+      setSuggestions(generatedText);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An unknown error occurred");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-blue-500/30 bg-blue-500/5 p-4">
+      <h4 className="mb-3 flex items-center gap-2 font-semibold text-blue-600">
+        <span>💡</span> AI Improvement Suggestions
+      </h4>
+
+      {!suggestions && !isLoading && !error && (
+        <>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Click the button below to generate AI-powered suggestions for improving your ER layout and operations using Google Gemini.
+          </p>
+          <Button
+            onClick={fetchSuggestions}
+            className="bg-blue-600 hover:bg-blue-700 text-white"
+          >
+            Generate Suggestions
+          </Button>
+        </>
+      )}
+
+      {isLoading && (
+        <div className="flex items-center gap-3 py-4">
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
+          <p className="text-sm text-muted-foreground">Generating suggestions with Gemini AI...</p>
+        </div>
+      )}
+
+      {error && (
+        <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4">
+          <p className="text-sm text-red-600 font-semibold mb-2">Error</p>
+          <p className="text-xs text-red-600">{error}</p>
+          <Button
+            onClick={fetchSuggestions}
+            variant="outline"
+            className="mt-3"
+            size="sm"
+          >
+            Try Again
+          </Button>
+        </div>
+      )}
+
+      {suggestions && (
+        <div className="space-y-3">
+          <div className="rounded-lg bg-white/50 dark:bg-muted/50 p-6 overflow-auto max-h-[600px]">
+            <div
+              className="prose prose-sm max-w-none dark:prose-invert prose-headings:font-semibold prose-h1:text-xl prose-h2:text-lg prose-h3:text-base prose-h4:text-sm prose-p:text-sm prose-li:text-sm prose-li:my-1 prose-code:text-xs prose-pre:text-xs prose-strong:font-semibold prose-ul:my-2 prose-ol:my-2"
+              dangerouslySetInnerHTML={{
+                __html: suggestions
+                  // First, clean up extra line breaks and whitespace
+                  .replace(/\n{3,}/g, '\n\n')
+                  .trim()
+                  // Convert headers (must be done before other replacements)
+                  .replace(/^#### (.+)$/gm, '<h4>$1</h4>')
+                  .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+                  .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+                  .replace(/^# (.+)$/gm, '<h1>$1</h1>')
+                  // Convert bold and italic
+                  .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+                  .replace(/\*(.+?)\*/g, '<em>$1</em>')
+                  // Handle lists with newlines between items
+                  .replace(/\n(?=[*-]\s)/g, '\n\n')  // Add extra newline before bullet items
+                  .replace(/\n(?=\d+\.\s)/g, '\n\n')  // Add extra newline before numbered items
+                  // Convert lists - handle both bullet and numbered
+                  .split('\n\n')
+                  .map(block => {
+                    // Check if block is a list
+                    if (block.match(/^[-*]\s/m)) {
+                      return '<ul class="space-y-1">' + block.replace(/^[-*]\s+(.+)$/gm, '<li class="my-1">$1</li>') + '</ul>';
+                    } else if (block.match(/^\d+\.\s/m)) {
+                      return '<ol class="space-y-1">' + block.replace(/^\d+\.\s+(.+)$/gm, '<li class="my-1">$1</li>') + '</ol>';
+                    } else if (block.match(/^<h[1-4]>/)) {
+                      return block; // Already a header
+                    } else {
+                      return block ? '<p>' + block + '</p>' : '';
+                    }
+                  })
+                  .join('')
+              }}
+            />
+          </div>
+          <div className="flex gap-2">
+            <Button
+              onClick={() => setSuggestions(null)}
+              variant="outline"
+              size="sm"
+            >
+              Generate New Suggestions
+            </Button>
+            <Button
+              onClick={() => navigator.clipboard.writeText(suggestions)}
+              variant="outline"
+              size="sm"
+            >
+              Copy to Clipboard
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function HeatmapSimulation({ config }: HeatmapSimulationProps) {
+  const [isRunning, setIsRunning] = useState(false);
+  const [hasRun, setHasRun] = useState(false);
+  const [isComplete, setIsComplete] = useState(false);
+  const [currentTick, setCurrentTick] = useState(0);
+  const [interpFrame, setInterpFrame] = useState(0);
+  const [maxTicks] = useState(103);
+  const [numInterpFrames] = useState(5); // Matches Python visualizer
+  const [avgCongestionGrid, setAvgCongestionGrid] = useState<number[][]>([]);
+  const [liveDensityGrid, setLiveDensityGrid] = useState<number[][]>([]);
+  const [anomalyResults, setAnomalyResults] = useState<AnomalyResults | null>(null);
+  const [entityPositions, setEntityPositions] = useState<EntityPosition[]>([]);
+  const [prevPositions, setPrevPositions] = useState<Map<string, Position>>(new Map());
+  const [currPositions, setCurrPositions] = useState<Map<string, Position>>(new Map());
+  const [stats, setStats] = useState({
+    activePatients: 0,
+    waiting: 0,
+    nursesBusy: 0,
+    nursesTotal: 3,
+    doctorsBusy: 0,
+    doctorsTotal: 2,
+  });
+
+  const simStateRef = useRef<SimulationState | null>(null);
+  const congestionSumRef = useRef<number[][]>([]);
+  const congestionCountRef = useRef<number[][]>([]);
+  const animationRef = useRef<number | null>(null);
+  const lastTimeRef = useRef<number>(0);
+  const frameIntervalMs = 30; // Faster animation - 40ms per interpolation frame
+
+  // Use config if provided, otherwise use defaults
+  const hospitalGrid = config?.hospital ?? DEFAULT_HOSPITAL;
+  const lowSeverityRooms = config?.lowSeverityRooms ?? DEFAULT_LOW_SEVERITY_ROOMS;
+  const highSeverityRooms = config?.highSeverityRooms ?? DEFAULT_HIGH_SEVERITY_ROOMS;
+  const configNursePositions = config?.nursePositions;
+  const configDoctorPositions = config?.doctorPositions;
+
+  const rows = hospitalGrid.length;
+  const cols = hospitalGrid[0]?.length ?? 0;
+
+  const initializeSimulation = useCallback(() => {
+    // Find spawn point (-1) and waiting room (1) from hospital grid
+    let spawnPoint: Position = [0, 0];
+    let waitingRoomPos: Position = [0, 1];
+    const freeCells: Position[] = [];
+
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const cell = hospitalGrid[r][c];
+        if (cell === -1) spawnPoint = [r, c];
+        if (cell === 1) waitingRoomPos = [r, c];
+        if (cell === 0) freeCells.push([r, c]);
+      }
+    }
+
+    // Use config positions if provided, otherwise auto-place nurses and doctors on free cells
+    let nursePositions: Position[];
+    let doctorPositions: Position[];
+
+    if (configNursePositions && configNursePositions.length > 0) {
+      nursePositions = configNursePositions;
+    } else {
+      const numNurses = Math.min(3, freeCells.length);
+      nursePositions = freeCells.slice(0, numNurses);
+    }
+
+    if (configDoctorPositions && configDoctorPositions.length > 0) {
+      doctorPositions = configDoctorPositions;
+    } else {
+      const numDoctors = Math.min(2, Math.max(0, freeCells.length - nursePositions.length));
+      doctorPositions = freeCells.slice(nursePositions.length, nursePositions.length + numDoctors);
+    }
+
+    // Build treatment rooms config from positions
+    const treatmentRooms = new Map<string, { severityType: number; occupancy: number }>();
+    for (const pos of lowSeverityRooms) {
+      treatmentRooms.set(posKey(pos), { severityType: 0, occupancy: 0 });
+    }
+    for (const pos of highSeverityRooms) {
+      treatmentRooms.set(posKey(pos), { severityType: 1, occupancy: 0 });
+    }
+
+    simStateRef.current = createSimulation(
+      hospitalGrid,
+      nursePositions,
+      doctorPositions,
+      treatmentRooms,
+      spawnPoint,
+      waitingRoomPos
+    );
+
+    // Initialize congestion tracking
+    congestionSumRef.current = Array(rows).fill(null).map(() => Array(cols).fill(0));
+    congestionCountRef.current = Array(rows).fill(null).map(() => Array(cols).fill(0));
+
+    setCurrentTick(0);
+    setInterpFrame(0);
+    setIsComplete(false);
+    setAvgCongestionGrid([]);
+    setLiveDensityGrid(Array(rows).fill(null).map(() => Array(cols).fill(0)));
+    setAnomalyResults(null);
+    setPrevPositions(new Map());
+    setCurrPositions(new Map());
+    setEntityPositions([]);
+    setStats({
+      activePatients: 0,
+      waiting: 0,
+      nursesBusy: 0,
+      nursesTotal: nursePositions.length,
+      doctorsBusy: 0,
+      doctorsTotal: doctorPositions.length,
+    });
+  }, [rows, cols, hospitalGrid, lowSeverityRooms, highSeverityRooms, configNursePositions, configDoctorPositions]);
+
+  // Capture positions - matches Python capture_positions()
+  const capturePositions = useCallback((state: SimulationState): Map<string, Position> => {
+    const positions = new Map<string, Position>();
+
+    for (const nurse of state.nurses) {
+      positions.set(`nurse_${nurse.id}`, [...nurse.position] as Position);
+    }
+    for (const doctor of state.doctors) {
+      positions.set(`doctor_${doctor.id}`, [...doctor.position] as Position);
+    }
+    for (const task of state.activeTasks) {
+      if (task.patient) {
+        positions.set(`patient_${task.patient.id}`, [...task.patient.position] as Position);
+      }
+    }
+
+    return positions;
+  }, []);
+
+  // Calculate interpolated positions for smooth animation
+  const getInterpolatedPositions = useCallback((
+    prev: Map<string, Position>,
+    curr: Map<string, Position>,
+    t: number,
+    state: SimulationState
+  ): EntityPosition[] => {
+    const allEntityIds = new Set([...prev.keys(), ...curr.keys()]);
+    const interpolated: EntityPosition[] = [];
+
+    allEntityIds.forEach(entityId => {
+      const prevPos = prev.get(entityId) ?? curr.get(entityId)!;
+      const currPos = curr.get(entityId) ?? prev.get(entityId)!;
+
+      const rInterp = prevPos[0] + (currPos[0] - prevPos[0]) * t;
+      const cInterp = prevPos[1] + (currPos[1] - prevPos[1]) * t;
+
+      const [type, idStr] = entityId.split("_");
+      const id = parseInt(idStr);
+
+      let severity: number | undefined;
+      if (type === "patient") {
+        for (const task of state.activeTasks) {
+          if (task.patient && task.patient.id === id) {
+            severity = task.patient.severity;
+            break;
+          }
+        }
+      }
+
+      interpolated.push({
+        id: entityId,
+        type: type as "nurse" | "doctor" | "patient",
+        position: [rInterp, cInterp],
+        severity,
+      });
+    });
+
+    return interpolated;
+  }, []);
+
+  const runAnimationFrame = useCallback((timestamp: number) => {
+    const state = simStateRef.current;
+    if (!state) return;
+
+    // Control frame rate
+    if (timestamp - lastTimeRef.current < frameIntervalMs) {
+      animationRef.current = requestAnimationFrame(runAnimationFrame);
+      return;
+    }
+    lastTimeRef.current = timestamp;
+
+    const currentInterpFrame = interpFrame;
+    const t = currentInterpFrame / numInterpFrames;
+
+    // Update interpolated positions for smooth animation
+    const interpolated = getInterpolatedPositions(prevPositions, currPositions, t, state);
+    setEntityPositions(interpolated);
+
+    // Update live density grid
+    const density: number[][] = Array(rows).fill(null).map(() => Array(cols).fill(0));
+    currPositions.forEach((pos) => {
+      density[pos[0]][pos[1]] += 1;
+    });
+    setLiveDensityGrid(density);
+
+    if (currentInterpFrame < numInterpFrames - 1) {
+      // Continue interpolation
+      setInterpFrame(currentInterpFrame + 1);
+      animationRef.current = requestAnimationFrame(runAnimationFrame);
+    } else {
+      // Finished interpolation for this tick, advance to next tick
+      if (state.tick >= maxTicks) {
+        // Simulation complete
+        setIsRunning(false);
+        setIsComplete(true);
+
+        // Calculate final average congestion - matches Python logic
+        const avgCongestion: number[][] = Array(rows).fill(null).map(() => Array(cols).fill(0));
+        const validPoints: CongestionPoint[] = [];
+
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            if (congestionCountRef.current[r][c] > 0) {
+              avgCongestion[r][c] = congestionSumRef.current[r][c] / congestionCountRef.current[r][c];
+            }
+          }
+        }
+
+        // Zero out spawn, waiting, and treatment rooms - matches Python
+        avgCongestion[0][0] = 0;
+        avgCongestion[0][1] = 0;
+        state.treatmentRooms.forEach((_, key) => {
+          const [r, c] = key.split(",").map(Number);
+          avgCongestion[r][c] = 0;
+        });
+
+        setAvgCongestionGrid(avgCongestion);
+
+        // Anomaly detection
+        for (let r = 0; r < rows; r++) {
+          for (let c = 0; c < cols; c++) {
+            validPoints.push({ row: r, col: c, congestion: avgCongestion[r][c] });
+          }
+        }
+        const results = runLocalAnomalyDetection(validPoints);
+        setAnomalyResults(results);
+
+        return;
+      }
+
+      // Run next simulation tick
+      const prevPos = capturePositions(state);
+
+      // Spawn patient every 5 ticks - matches Python
+      if (state.tick % 5 === 0) {
+        spawnPatient(state);
+      }
+
+      patientToRoom(state);
+      processTasks(state);
+
+      const currPos = capturePositions(state);
+
+      // Track congestion - matches Python logic exactly
+      const tickCongestion: number[][] = Array(rows).fill(null).map(() => Array(cols).fill(0));
+      const hasMovement: boolean[][] = Array(rows).fill(null).map(() => Array(cols).fill(false));
+
+      // First pass: identify squares with moving entities
+      currPos.forEach((pos, entityId) => {
+        const pPos = prevPos.get(entityId);
+        if (pPos && !posEqual(pPos, pos)) {
+          hasMovement[pos[0]][pos[1]] = true;
+        }
+      });
+
+      // Second pass: count entities only in squares with movement
+      currPos.forEach((pos) => {
+        if (hasMovement[pos[0]][pos[1]]) {
+          tickCongestion[pos[0]][pos[1]] += 1;
+        }
+      });
+
+      // Update congestion tracking
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          congestionSumRef.current[r][c] += tickCongestion[r][c];
+          if (tickCongestion[r][c] > 0) {
+            congestionCountRef.current[r][c] += 1;
+          }
+        }
+      }
+
+      // Update stats - matches Python
+      setStats({
+        activePatients: state.patientCount,
+        waiting: state.waitingRoom.length,
+        nursesBusy: state.nurses.filter(n => n.state === 1).length,
+        nursesTotal: state.nurses.length,
+        doctorsBusy: state.doctors.filter(d => d.state === 1).length,
+        doctorsTotal: state.doctors.length,
+      });
+
+      setPrevPositions(prevPos);
+      setCurrPositions(currPos);
+      state.tick++;
+      setCurrentTick(state.tick);
+      setInterpFrame(0);
+
+      animationRef.current = requestAnimationFrame(runAnimationFrame);
+    }
+  }, [interpFrame, numInterpFrames, prevPositions, currPositions, maxTicks, rows, cols, capturePositions, getInterpolatedPositions, frameIntervalMs]);
+
+  const startSimulation = useCallback(() => {
+    if (!simStateRef.current) {
+      initializeSimulation();
+    }
+
+    // Initialize first tick
+    const state = simStateRef.current!;
+    const initialPositions = capturePositions(state);
+    setPrevPositions(initialPositions);
+    setCurrPositions(initialPositions);
+
+    setIsRunning(true);
+    setHasRun(true);
+    lastTimeRef.current = 0;
+    animationRef.current = requestAnimationFrame(runAnimationFrame);
+  }, [initializeSimulation, capturePositions, runAnimationFrame]);
+
+  const pauseSimulation = useCallback(() => {
+    setIsRunning(false);
+    if (animationRef.current) {
+      cancelAnimationFrame(animationRef.current);
+    }
+  }, []);
+
+  const resetSimulation = useCallback(() => {
+    pauseSimulation();
+    setHasRun(false);
+    setIsComplete(false);
+    initializeSimulation();
+  }, [pauseSimulation, initializeSimulation]);
+
+  useEffect(() => {
+    initializeSimulation();
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+      }
+    };
+  }, [initializeSimulation]);
+
+  useEffect(() => {
+    if (isRunning && !animationRef.current) {
+      animationRef.current = requestAnimationFrame(runAnimationFrame);
+    }
+    return () => {
+      if (animationRef.current) {
+        cancelAnimationFrame(animationRef.current);
+        animationRef.current = null;
+      }
+    };
+  }, [isRunning, runAnimationFrame]);
+
+  const getCellColor = (cellValue: number): string => {
+    switch (cellValue) {
+      case -2: return COLORS.wall;
+      case -1: return COLORS.spawn;
+      case 0: return COLORS.free;
+      case 1: return COLORS.waiting;
+      case 4: return COLORS.treatmentLow;
+      case 5: return COLORS.treatmentHigh;
+      default: return COLORS.free;
+    }
+  };
+
+  const getCellLabel = (cellValue: number): string => {
+    switch (cellValue) {
+      case -2: return "WALL";
+      case -1: return "SPAWN";
+      case 1: return "WAIT";
+      case 4: return "LOW";
+      case 5: return "HIGH";
+      default: return "";
+    }
+  };
+
+  const getHeatmapColor = (value: number, maxValue: number): string => {
+    if (value === 0) return "rgba(236, 240, 241, 0.3)";
+    const intensity = Math.min(value / Math.max(maxValue, 1), 1);
+    // YlOrRd colormap approximation
+    if (intensity < 0.25) return "rgba(255, 255, 178, 0.8)";
+    if (intensity < 0.5) return "rgba(254, 204, 92, 0.8)";
+    if (intensity < 0.75) return "rgba(253, 141, 60, 0.8)";
+    return "rgba(227, 26, 28, 0.8)";
+  };
+
+  const getEntityColor = (entity: EntityPosition): string => {
+    if (entity.type === "nurse") return COLORS.nurse;
+    if (entity.type === "doctor") return COLORS.doctor;
+    if (entity.type === "patient") {
+      return (entity.severity ?? 0) >= 4 ? COLORS.patientHigh : COLORS.patientLow;
+    }
+    return "#000";
+  };
+
+  const hospital = simStateRef.current?.hospital ?? hospitalGrid;
+  const maxDensity = Math.max(...liveDensityGrid.flat(), 1);
+  const maxAvgCongestion = avgCongestionGrid.length > 0 ? Math.max(...avgCongestionGrid.flat(), 1) : 1;
+
+  return (
+    <Card className="w-full">
+      <CardHeader>
+        <CardTitle className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <span>ER Simulation</span>
+          <div className="flex flex-wrap items-center gap-2 text-sm font-normal text-muted-foreground">
+            <span>Tick: {currentTick}/{maxTicks}</span>
+            <span className="hidden sm:inline">|</span>
+            <span>Patients: {stats.activePatients}</span>
+            <span>Waiting: {stats.waiting}</span>
+            <span>Nurses: {stats.nursesBusy}/{stats.nursesTotal}</span>
+            <span>Doctors: {stats.doctorsBusy}/{stats.doctorsTotal}</span>
+          </div>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {/* Hospital Layout + Live Heatmap Side by Side */}
+        <div className="grid gap-6 lg:grid-cols-2">
+          {/* Hospital Layout with Animated Entities */}
+          <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+            <h3 className="mb-3 text-sm font-medium text-foreground">Hospital Layout</h3>
+            <div
+              className="relative mx-auto"
+              style={{
+                width: `${cols * 60}px`,
+                height: `${rows * 60}px`,
+              }}
+            >
+              {/* Grid cells */}
+              {hospital.map((row, r) =>
+                row.map((cellValue, c) => (
+                  <div
+                    key={`cell-${r}-${c}`}
+                    className="absolute flex items-center justify-center border border-gray-300/50"
+                    style={{
+                      left: `${c * 60}px`,
+                      top: `${r * 60}px`,
+                      width: "60px",
+                      height: "60px",
+                      backgroundColor: getCellColor(cellValue),
+                      opacity: 0.4,
+                    }}
+                  >
+                    <span className="text-[10px] font-bold text-foreground/50">
+                      {getCellLabel(cellValue)}
+                    </span>
+                  </div>
+                ))
+              )}
+
+              {/* Animated entities as circles */}
+              {entityPositions.map((entity) => {
+                const size = entity.type === "patient" ? 20 : 24;
+                return (
+                  <div
+                    key={entity.id}
+                    className="absolute rounded-full border-2 border-black transition-all"
+                    style={{
+                      left: `${entity.position[1] * 60 + 30 - size / 2}px`,
+                      top: `${entity.position[0] * 60 + 30 - size / 2}px`,
+                      width: `${size}px`,
+                      height: `${size}px`,
+                      backgroundColor: getEntityColor(entity),
+                      transitionDuration: `${frameIntervalMs}ms`,
+                      transitionTimingFunction: "linear",
+                    }}
+                  />
+                );
+              })}
+            </div>
+
+            {/* Legend */}
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-3 text-xs">
+              <div className="flex items-center gap-1">
+                <div className="h-3 w-3 rounded-full" style={{ backgroundColor: COLORS.nurse }} />
+                <span>Nurse</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="h-3 w-3 rounded-full" style={{ backgroundColor: COLORS.doctor }} />
+                <span>Doctor</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="h-3 w-3 rounded-full" style={{ backgroundColor: COLORS.patientLow }} />
+                <span>Patient (Low)</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="h-3 w-3 rounded-full" style={{ backgroundColor: COLORS.patientHigh }} />
+                <span>Patient (High)</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Live Entity Density Heatmap */}
+          <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+            <h3 className="mb-3 text-sm font-medium text-foreground">Entity Density Heatmap</h3>
+            <div
+              className="relative mx-auto"
+              style={{
+                width: `${cols * 60}px`,
+                height: `${rows * 60}px`,
+              }}
+            >
+              {liveDensityGrid.map((row, r) =>
+                row.map((value, c) => (
+                  <div
+                    key={`density-${r}-${c}`}
+                    className="absolute flex items-center justify-center border border-white/30"
+                    style={{
+                      left: `${c * 60}px`,
+                      top: `${r * 60}px`,
+                      width: "60px",
+                      height: "60px",
+                      backgroundColor: getHeatmapColor(value, maxDensity),
+                    }}
+                  >
+                    {value > 0 && (
+                      <span
+                        className="text-sm font-bold"
+                        style={{ color: value > 2 ? "white" : "black" }}
+                      >
+                        {value}
+                      </span>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Color scale legend */}
+            <div className="mt-4 flex items-center justify-center gap-2 text-xs">
+              <span>0</span>
+              <div className="flex h-3 w-32 overflow-hidden rounded">
+                <div className="flex-1" style={{ backgroundColor: "rgba(255, 255, 178, 0.8)" }} />
+                <div className="flex-1" style={{ backgroundColor: "rgba(254, 204, 92, 0.8)" }} />
+                <div className="flex-1" style={{ backgroundColor: "rgba(253, 141, 60, 0.8)" }} />
+                <div className="flex-1" style={{ backgroundColor: "rgba(227, 26, 28, 0.8)" }} />
+              </div>
+              <span>{maxDensity}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Controls */}
+        <div className="flex flex-wrap items-center gap-3">
+          {!isRunning ? (
+            <Button onClick={startSimulation} disabled={isComplete}>
+              <Play className="mr-2 h-4 w-4" />
+              {currentTick === 0 ? "Run Simulation" : "Resume"}
+            </Button>
+          ) : (
+            <Button onClick={pauseSimulation} variant="secondary">
+              <Pause className="mr-2 h-4 w-4" />
+              Pause
+            </Button>
+          )}
+          <Button onClick={resetSimulation} variant="outline">
+            <RotateCcw className="mr-2 h-4 w-4" />
+            Reset
+          </Button>
+        </div>
+
+        {/* Final Average Congestion Heatmap - shown after completion */}
+        {isComplete && avgCongestionGrid.length > 0 && (
+          <div className="space-y-4 border-t border-border/60 pt-6">
+            <h3 className="text-lg font-semibold text-foreground">
+              Post-Simulation Congestion Analysis
+            </h3>
+
+            {/* AI Improvement Suggestions Prompt */}
+            <SuggestionsPrompt
+              hospital={hospital}
+              avgCongestionGrid={avgCongestionGrid}
+              anomalyResults={anomalyResults}
+              simState={simStateRef.current}
+            />
+
+            <div className="rounded-2xl border border-border/60 bg-muted/20 p-4">
+              <h4 className="mb-3 text-sm font-medium text-foreground">
+                Average Congestion Heatmap (Entities per Tick)
+              </h4>
+              <div
+                className="relative mx-auto"
+                style={{
+                  width: `${cols * 60}px`,
+                  height: `${rows * 60}px`,
+                }}
+              >
+                {avgCongestionGrid.map((row, r) =>
+                  row.map((value, c) => {
+                    const cellValue = hospital[r][c];
+                    return (
+                      <div
+                        key={`avg-${r}-${c}`}
+                        className="absolute flex flex-col items-center justify-center border border-gray-400/50"
+                        style={{
+                          left: `${c * 60}px`,
+                          top: `${r * 60}px`,
+                          width: "60px",
+                          height: "60px",
+                          backgroundColor: cellValue === -2
+                            ? COLORS.wall
+                            : getHeatmapColor(value, maxAvgCongestion),
+                          opacity: cellValue === -2 ? 0.4 : 0.9,
+                        }}
+                      >
+                        <span
+                          className="text-xs font-bold"
+                          style={{ color: value > maxAvgCongestion / 2 ? "white" : "black" }}
+                        >
+                          {value.toFixed(2)}
+                        </span>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
+
+            {/* Statistics Cards */}
+            {anomalyResults && (
+              <>
+                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+                  <div className="rounded-xl border border-border/60 bg-muted/30 p-4">
+                    <p className="text-xs text-muted-foreground">Mean Congestion</p>
+                    <p className="text-2xl font-semibold text-foreground">
+                      {anomalyResults.statistics.mean.toFixed(3)}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-border/60 bg-muted/30 p-4">
+                    <p className="text-xs text-muted-foreground">Max Congestion</p>
+                    <p className="text-2xl font-semibold text-foreground">
+                      {Math.max(...avgCongestionGrid.flat()).toFixed(3)}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-border/60 bg-muted/30 p-4">
+                    <p className="text-xs text-muted-foreground">Std Deviation</p>
+                    <p className="text-2xl font-semibold text-foreground">
+                      {anomalyResults.statistics.std.toFixed(3)}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-border/60 bg-muted/30 p-4">
+                    <p className="text-xs text-muted-foreground">IQR</p>
+                    <p className="text-2xl font-semibold text-foreground">
+                      {anomalyResults.statistics.iqr.toFixed(3)}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Bottleneck Results - cells with congestion > 2.5 */}
+                {anomalyResults.anomalies.highCongestion.length > 0 && (
+                  <div className="rounded-xl border border-red-500/30 bg-red-500/5 p-4">
+                    <div className="mb-2 flex items-center gap-2">
+                      <AlertTriangle className="h-5 w-5 text-red-500" />
+                      <h4 className="font-semibold text-red-600">
+                        Bottlenecks Detected ({anomalyResults.anomalies.highCongestion.length})
+                      </h4>
+                    </div>
+                    <p className="mb-2 text-xs text-muted-foreground">
+                      Cells with high congestion:
+                    </p>
+                    <div className="space-y-1 text-sm">
+                      {anomalyResults.anomalies.highCongestion.slice(0, 5).map((point, i) => (
+                        <p key={i} className="text-muted-foreground">
+                          Grid ({point.row}, {point.col}): congestion = {point.congestion.toFixed(4)}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {anomalyResults.anomalies.highCongestion.length === 0 && (
+                  <div className="rounded-xl border border-green-500/30 bg-green-500/5 p-4">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className="h-5 w-5 text-green-500" />
+                      <h4 className="font-semibold text-green-600">
+                        No Critical Bottlenecks Detected
+                      </h4>
+                    </div>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      All traffic patterns are within normal parameters.
+                    </p>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}

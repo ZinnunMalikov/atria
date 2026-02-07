@@ -1,0 +1,59 @@
+I will pre-construct a 2D array in Python that serves as a static hospital layout template. The grid only represents the environment, not agents.
+
+Cell encodings:
+-2 = cannot go here (walls)
+-1 = spawn point
+0 = free to walk
+1 = patient waiting room
+4 = low-severity treatment room
+5 = high-severity treatment room
+
+Nurse and doctor idle locations are not stored in the grid. Their idle positions are stored directly in their object definitions.
+
+Patients, nurses, and doctors are all objects.
+
+Patient object:
+Each patient has a severity value in the range 1 (low) to 5 (high).
+
+Nurse object:
+Each nurse has a state (idle = 0, busy = 1).
+Each nurse stores her initial idle position.
+Nurses move around the grid using A* pathfinding.
+
+Doctor object:
+Each doctor has a state (idle = 0, busy = 1).
+Each doctor stores his initial idle position.
+Doctors move only when assigned to severe cases.
+
+Treatment rooms are stored separately as a hashmap of integers.
+Each room has:
+- a severity type (low = 0, high = 1)
+- an occupancy state (free = 0, occupied = 1)
+
+Flow of the simulation:
+Patients spawn every 5 ticks. Most patients are low severity, with occasional high-severity cases.
+The waiting room is implemented as a MAX-heap priority queue based on patient severity.
+Movement is defiend as 1-tick = 1 cell movement (up, down, left, right).
+
+If a treatment room is free and a nurse is idle, the room is locked for the highest-priority patient in the waiting room. A nurse is dispatched to that patient.
+
+Movement is grid-based and handled via A* pathfinding.
+Escort behavior works as follows:
+The nurse moves from her current position to the waiting room.
+The nurse and patient then move together to the appropriate treatment room.
+
+If the patient is not severe:
+The nurse stays until treatment is complete.
+After treatment, the patient walks alone to the spawn point and disappears.
+A static patient count is decremented.
+
+If the patient is severe:
+The nurse escorts the patient to a severe treatment room.
+The nurse then returns to her initial idle position.
+One idle doctor is randomly selected and sent to the severe room.
+
+Doctor behavior:
+If doctors are idle, one is randomly chosen to handle a severe case.
+If no doctor is idle, the severe patient waits in the room until one becomes available.
+
+Discharge means the patient walks back to the spawn cell and is removed from the simulation, decrementing the static patient count.
