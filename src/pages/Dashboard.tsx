@@ -1254,7 +1254,7 @@ const Dashboard = () => {
                     <div className="text-center">
                       <h3 className="text-xl font-semibold text-foreground mb-2">No Layout Loaded</h3>
                       <p className="text-muted-foreground mb-6">
-                        Build a custom hospital layout to run simulations
+                        Design a hospital layout to run simulations
                       </p>
                       <Button
                         onClick={() => navigate("/build-layout")}
