@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import { HeatmapSimulation, type SimulationConfig, type SimulationResults } from "@/components/HeatmapSimulation";
 import { AISuggestions } from "@/components/AISuggestions";
 import {
@@ -49,6 +50,8 @@ type HospitalLayoutProfile = {
 type Note = {
   id: string;
   content: string;
+  targetType: "Corridor" | "Room" | "Other";
+  targetId: string;
   createdAt: string;
   updatedAt: string;
 };
@@ -275,8 +278,12 @@ const Dashboard = () => {
   const [mciSimResults, setMciSimResults] = useState<SimulationResults | null>(null);
   const [notes, setNotes] = useState<Note[]>([]);
   const [noteInput, setNoteInput] = useState("");
+  const [noteTargetType, setNoteTargetType] = useState<Note["targetType"]>("Corridor");
+  const [noteTargetId, setNoteTargetId] = useState("");
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [editingContent, setEditingContent] = useState("");
+  const [editingTargetType, setEditingTargetType] = useState<Note["targetType"]>("Corridor");
+  const [editingTargetId, setEditingTargetId] = useState("");
   const [noteError, setNoteError] = useState<string | null>(null);
 
   const normalizedOrganization = organization.trim().toLowerCase();
@@ -437,7 +444,16 @@ const Dashboard = () => {
     const storedNotes = localStorage.getItem("atria:notes");
     if (storedNotes) {
       try {
-        setNotes(JSON.parse(storedNotes));
+        const parsed = JSON.parse(storedNotes) as Partial<Note>[];
+        const normalized = parsed.map((note) => ({
+          id: note.id ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          content: note.content ?? "",
+          targetType: (note.targetType as Note["targetType"]) ?? "Corridor",
+          targetId: note.targetId ?? "Unassigned",
+          createdAt: note.createdAt ?? new Date().toISOString(),
+          updatedAt: note.updatedAt ?? new Date().toISOString(),
+        }));
+        setNotes(normalized);
       } catch {
         setNotes([]);
       }
@@ -789,15 +805,23 @@ const Dashboard = () => {
       setNoteError("Write a note before saving.");
       return;
     }
+    const target = noteTargetId.trim();
+    if (!target) {
+      setNoteError("Assign a corridor or room before saving.");
+      return;
+    }
     const now = new Date().toISOString();
     const newNote: Note = {
       id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
       content: trimmed,
+      targetType: noteTargetType,
+      targetId: target,
       createdAt: now,
       updatedAt: now,
     };
     setNotes((prev) => [newNote, ...prev]);
     setNoteInput("");
+    setNoteTargetId("");
   };
 
   const handleDeleteNote = (noteId: string) => {
@@ -811,6 +835,8 @@ const Dashboard = () => {
   const handleStartEdit = (note: Note) => {
     setEditingNoteId(note.id);
     setEditingContent(note.content);
+    setEditingTargetType(note.targetType);
+    setEditingTargetId(note.targetId);
   };
 
   const handleSaveEdit = () => {
@@ -820,21 +846,34 @@ const Dashboard = () => {
       setNoteError("Note cannot be empty.");
       return;
     }
+    const target = editingTargetId.trim();
+    if (!target) {
+      setNoteError("Assign a corridor or room before saving.");
+      return;
+    }
     const now = new Date().toISOString();
     setNotes((prev) =>
       prev.map((note) =>
         note.id === editingNoteId
-          ? { ...note, content: trimmed, updatedAt: now }
+          ? {
+              ...note,
+              content: trimmed,
+              targetType: editingTargetType,
+              targetId: target,
+              updatedAt: now,
+            }
           : note,
       ),
     );
     setEditingNoteId(null);
     setEditingContent("");
+    setEditingTargetId("");
   };
 
   const handleCancelEdit = () => {
     setEditingNoteId(null);
     setEditingContent("");
+    setEditingTargetId("");
   };
 
   const handleNoteFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -1405,6 +1444,31 @@ const Dashboard = () => {
                 <CardContent className="space-y-6">
                   <div className="space-y-3">
                     <Label htmlFor="note-input">New note</Label>
+                    <div className="grid gap-3 sm:grid-cols-[140px_1fr]">
+                      <div className="space-y-2">
+                        <Label htmlFor="note-target-type">Type</Label>
+                        <select
+                          id="note-target-type"
+                          value={noteTargetType}
+                          onChange={(event) => setNoteTargetType(event.target.value as Note["targetType"])}
+                          className="w-full rounded-xl border border-white/15 bg-slate-950/60 px-3 py-2 text-sm text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60"
+                        >
+                          <option value="Corridor">Corridor</option>
+                          <option value="Room">Room</option>
+                          <option value="Other">Other</option>
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="note-target-id">Location</Label>
+                        <Input
+                          id="note-target-id"
+                          value={noteTargetId}
+                          onChange={(event) => setNoteTargetId(event.target.value)}
+                          placeholder="e.g., Corridor C3 or ICU-1"
+                          className="border-white/15 bg-slate-950/60 text-white placeholder:text-white/30 focus-visible:ring-emerald-300/60"
+                        />
+                      </div>
+                    </div>
                     <textarea
                       id="note-input"
                       value={noteInput}
@@ -1449,6 +1513,9 @@ const Dashboard = () => {
                             <p className="text-xs uppercase tracking-[0.3em] text-white/50">
                               {new Date(note.updatedAt).toLocaleString()}
                             </p>
+                            <span className="rounded-full border border-white/15 px-3 py-1 text-[10px] uppercase tracking-[0.3em] text-white/60">
+                              {note.targetType}: {note.targetId}
+                            </span>
                             <div className="flex flex-wrap gap-2">
                               {editingNoteId === note.id ? (
                                 <>
@@ -1491,11 +1558,40 @@ const Dashboard = () => {
                             </div>
                           </div>
                           {editingNoteId === note.id ? (
-                            <textarea
-                              value={editingContent}
-                              onChange={(event) => setEditingContent(event.target.value)}
-                              className="mt-4 min-h-[120px] w-full rounded-xl border border-white/15 bg-slate-900/60 p-3 text-sm text-white placeholder:text-white/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60"
-                            />
+                            <div className="mt-4 space-y-3">
+                              <div className="grid gap-3 sm:grid-cols-[140px_1fr]">
+                                <div className="space-y-2">
+                                  <Label htmlFor={`edit-target-type-${note.id}`}>Type</Label>
+                                  <select
+                                    id={`edit-target-type-${note.id}`}
+                                    value={editingTargetType}
+                                    onChange={(event) =>
+                                      setEditingTargetType(event.target.value as Note["targetType"])
+                                    }
+                                    className="w-full rounded-xl border border-white/15 bg-slate-950/60 px-3 py-2 text-sm text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60"
+                                  >
+                                    <option value="Corridor">Corridor</option>
+                                    <option value="Room">Room</option>
+                                    <option value="Other">Other</option>
+                                  </select>
+                                </div>
+                                <div className="space-y-2">
+                                  <Label htmlFor={`edit-target-id-${note.id}`}>Location</Label>
+                                  <Input
+                                    id={`edit-target-id-${note.id}`}
+                                    value={editingTargetId}
+                                    onChange={(event) => setEditingTargetId(event.target.value)}
+                                    placeholder="e.g., Corridor C3 or ICU-1"
+                                    className="border-white/15 bg-slate-950/60 text-white placeholder:text-white/30 focus-visible:ring-emerald-300/60"
+                                  />
+                                </div>
+                              </div>
+                              <textarea
+                                value={editingContent}
+                                onChange={(event) => setEditingContent(event.target.value)}
+                                className="min-h-[120px] w-full rounded-xl border border-white/15 bg-slate-900/60 p-3 text-sm text-white placeholder:text-white/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60"
+                              />
+                            </div>
                           ) : (
                             <p className="mt-4 whitespace-pre-wrap text-sm text-white/80">
                               {note.content}
