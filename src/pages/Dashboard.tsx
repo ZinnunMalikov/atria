@@ -13,7 +13,8 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { HeatmapSimulation, type SimulationConfig } from "@/components/HeatmapSimulation";
+import { HeatmapSimulation, type SimulationConfig, type SimulationResults } from "@/components/HeatmapSimulation";
+import { AISuggestions } from "@/components/AISuggestions";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -261,6 +262,8 @@ const Dashboard = () => {
   const [simulationConfig, setSimulationConfig] = useState<SimulationConfig | undefined>(undefined);
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>(null);
   const [customConfigLoaded, setCustomConfigLoaded] = useState(false);
+  const [standardSimResults, setStandardSimResults] = useState<SimulationResults | null>(null);
+  const [mciSimResults, setMciSimResults] = useState<SimulationResults | null>(null);
 
   const normalizedOrganization = organization.trim().toLowerCase();
   const organizationKey = useMemo(() => {
@@ -334,6 +337,8 @@ const Dashboard = () => {
         const customConfig = JSON.parse(customConfigStr);
         setSimulationConfig(customConfig);
         setCustomConfigLoaded(true);
+        setStandardSimResults(null);
+        setMciSimResults(null);
         setUploadStatus({
           type: "success",
           message: "Custom hospital layout loaded successfully. Simulation ready to run!",
@@ -453,6 +458,8 @@ const Dashboard = () => {
 
       if (config) {
         setSimulationConfig(config);
+        setStandardSimResults(null);
+        setMciSimResults(null);
         setUploadStatus({
           type: "success",
           message: `Loaded ${config.hospital.length}x${config.hospital[0].length} hospital layout with ${config.lowSeverityRooms.length} low-severity and ${config.highSeverityRooms.length} high-severity rooms`,
@@ -890,6 +897,8 @@ const Dashboard = () => {
                         setSimulationConfig(undefined);
                         setCustomConfigLoaded(false);
                         setUploadStatus(null);
+                        setStandardSimResults(null);
+                        setMciSimResults(null);
                       }}
                       className="mt-2 h-6 text-[10px] text-green-300 hover:bg-green-500/30 hover:text-green-100"
                     >
@@ -1071,12 +1080,20 @@ const Dashboard = () => {
                     config={simulationConfig}
                     mode="standard"
                     label="Standard Simulation"
+                    onComplete={(results) => setStandardSimResults(results)}
                   />
                   <HeatmapSimulation
                     config={getMCIConfig(simulationConfig)}
                     mode="mci"
                     label="MCI / Pandemic Simulation"
+                    onComplete={(results) => setMciSimResults(results)}
                   />
+                  {standardSimResults && mciSimResults && (
+                    <AISuggestions
+                      standardResults={standardSimResults}
+                      mciResults={mciSimResults}
+                    />
+                  )}
                 </div>
               ) : (
                 <Card className="w-full">
