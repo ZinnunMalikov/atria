@@ -69,27 +69,31 @@ const TwoFactorSetup = () => {
   };
 
   return (
-    <main className="min-h-screen bg-background">
-      <div className="mx-auto max-w-4xl px-6 py-16">
+    <main className="dark relative min-h-screen overflow-hidden bg-slate-950 text-slate-100">
+      <div className="pointer-events-none absolute inset-0">
+        <div className="absolute inset-0 hospital-landing" />
+        <div className="absolute inset-0 bg-slate-950/70" />
+      </div>
+      <div className="relative mx-auto max-w-4xl px-6 py-16">
         <div className="mb-8">
-          <p className="text-sm font-medium text-muted-foreground">Security</p>
-          <h1 className="mt-2 text-3xl font-semibold text-foreground">
+          <p className="text-sm font-medium text-white/60">Security</p>
+          <h1 className="mt-2 text-3xl font-semibold text-white">
             Enable Two-Factor Authentication
           </h1>
-          <p className="mt-2 text-sm text-muted-foreground">
+          <p className="mt-2 text-sm text-white/60">
             Add an extra layer of protection with a 6-digit code from your
             authenticator app.
           </p>
         </div>
 
-        <Card>
+        <Card className="border-white/10 bg-slate-900/80">
           <CardHeader>
             <CardTitle>Authenticator app setup</CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
             {!factorId ? (
               <Button
-                className="bg-foreground text-background hover:bg-foreground/90"
+                className="bg-emerald-300 text-slate-900 hover:bg-emerald-200"
                 onClick={handleEnroll}
                 disabled={isEnrolling}
               >
@@ -98,24 +102,24 @@ const TwoFactorSetup = () => {
             ) : (
               <>
                 <div className="grid gap-6 md:grid-cols-[240px_1fr] items-start">
-                  <div className="rounded-2xl border border-border/60 bg-muted/40 p-4">
+                  <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-4">
                     {qrCode ? (
                       <img src={qrCode} alt="2FA QR code" className="w-full" />
                     ) : (
-                      <p className="text-sm text-muted-foreground">
+                      <p className="text-sm text-white/60">
                         QR code unavailable.
                       </p>
                     )}
                   </div>
                   <div className="space-y-3">
-                    <p className="text-sm text-muted-foreground">
+                    <p className="text-sm text-white/60">
                       Scan the QR code with your authenticator app or enter the
                       secret key manually.
                     </p>
-                    <div className="rounded-xl border border-border/60 bg-muted/40 p-3 text-sm text-foreground">
+                    <div className="rounded-xl border border-white/10 bg-slate-950/60 p-3 text-sm text-white">
                       {secret ?? "Secret unavailable"}
                     </div>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-xs text-white/50">
                       Keep this secret safe. You can use it to recover access if
                       you lose your device.
                     </p>
@@ -133,6 +137,7 @@ const TwoFactorSetup = () => {
                       value={code}
                       onChange={(event) => setCode(event.target.value)}
                       required
+                      className="border-white/15 bg-slate-950/60 text-white placeholder:text-white/30 focus-visible:ring-emerald-300/60"
                     />
                   </div>
 
@@ -142,16 +147,20 @@ const TwoFactorSetup = () => {
 
                   {isComplete ? (
                     <div className="flex flex-wrap items-center gap-3">
-                      <p className="text-sm font-medium text-foreground">
+                      <p className="text-sm font-medium text-white">
                         2FA is now enabled for your account.
                       </p>
-                      <Button variant="outline" onClick={() => navigate("/dashboard")}>
+                      <Button
+                        variant="outline"
+                        className="border-white/30 text-white hover:border-white/60 hover:bg-white/10"
+                        onClick={() => navigate("/dashboard")}
+                      >
                         Back to dashboard
                       </Button>
                     </div>
                   ) : (
                     <Button
-                      className="bg-foreground text-background hover:bg-foreground/90"
+                      className="bg-emerald-300 text-slate-900 hover:bg-emerald-200"
                       disabled={isVerifying}
                     >
                       {isVerifying ? "Verifying..." : "Verify and enable 2FA"}

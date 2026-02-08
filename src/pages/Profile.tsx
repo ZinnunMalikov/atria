@@ -24,14 +24,13 @@ const Profile = () => {
   };
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-background">
+    <main className="dark relative min-h-screen overflow-hidden bg-slate-950 text-slate-100">
       <div className="pointer-events-none absolute inset-0">
-        <div className="absolute inset-0 turing-bg" />
-        <div className="absolute inset-0 turing-grid opacity-35" />
-        <div className="absolute inset-0 turing-lines turing-fade opacity-50" />
+        <div className="absolute inset-0 hospital-landing" />
+        <div className="absolute inset-0 bg-slate-950/70" />
       </div>
       <div className="relative mx-auto max-w-3xl px-6 py-16">
-        <Card>
+        <Card className="border-white/10 bg-slate-900/80">
           <CardHeader>
             <CardTitle>Edit Profile</CardTitle>
           </CardHeader>
@@ -43,6 +42,7 @@ const Profile = () => {
                 placeholder="Morgan Lee"
                 value={displayName}
                 onChange={(event) => setDisplayName(event.target.value)}
+                className="border-white/15 bg-slate-950/60 text-white placeholder:text-white/30 focus-visible:ring-emerald-300/60"
               />
             </div>
             <div className="space-y-2">
@@ -52,17 +52,30 @@ const Profile = () => {
                 placeholder="ER Specialist"
                 value={role}
                 onChange={(event) => setRole(event.target.value)}
+                className="border-white/15 bg-slate-950/60 text-white placeholder:text-white/30 focus-visible:ring-emerald-300/60"
               />
             </div>
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
-              <Input id="email" value={email} disabled />
+              <Input
+                id="email"
+                value={email}
+                disabled
+                className="border-white/10 bg-slate-950/40 text-white/60"
+              />
             </div>
             <div className="flex flex-wrap gap-3">
-              <Button className="bg-foreground text-background hover:bg-foreground/90" onClick={handleSave}>
+              <Button
+                className="bg-emerald-300 text-slate-900 hover:bg-emerald-200"
+                onClick={handleSave}
+              >
                 Save profile
               </Button>
-              <Button variant="outline" onClick={() => navigate("/dashboard")}>
+              <Button
+                variant="outline"
+                className="border-white/30 text-white hover:border-white/60 hover:bg-white/10"
+                onClick={() => navigate("/dashboard")}
+              >
                 Cancel
               </Button>
             </div>

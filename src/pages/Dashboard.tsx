@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
 import { HeatmapSimulation, type SimulationConfig, type SimulationResults } from "@/components/HeatmapSimulation";
 import { AISuggestions } from "@/components/AISuggestions";
 import {
@@ -22,6 +23,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { supabase } from "@/lib/supabase";
+import mammoth from "mammoth/mammoth.browser";
 
 type HospitalUpload = {
   id: string;
@@ -42,6 +44,13 @@ type HospitalLayoutProfile = {
   occupancy: string;
   rooms: string[];
   insights: { label: string; value: string }[];
+};
+
+type Note = {
+  id: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 const buildStandardLayoutRooms = () => {
@@ -264,6 +273,11 @@ const Dashboard = () => {
   const [customConfigLoaded, setCustomConfigLoaded] = useState(false);
   const [standardSimResults, setStandardSimResults] = useState<SimulationResults | null>(null);
   const [mciSimResults, setMciSimResults] = useState<SimulationResults | null>(null);
+  const [notes, setNotes] = useState<Note[]>([]);
+  const [noteInput, setNoteInput] = useState("");
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [editingContent, setEditingContent] = useState("");
+  const [noteError, setNoteError] = useState<string | null>(null);
 
   const normalizedOrganization = organization.trim().toLowerCase();
   const organizationKey = useMemo(() => {
@@ -418,6 +432,21 @@ const Dashboard = () => {
 
     void loadProfile();
   }, [customConfigLoaded]);
+
+  useEffect(() => {
+    const storedNotes = localStorage.getItem("atria:notes");
+    if (storedNotes) {
+      try {
+        setNotes(JSON.parse(storedNotes));
+      } catch {
+        setNotes([]);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem("atria:notes", JSON.stringify(notes));
+  }, [notes]);
 
   const formattedName = useMemo(() => {
     if (!displayName) return "Dr. Clinician";
@@ -753,6 +782,84 @@ const Dashboard = () => {
     reportWindow.print();
   };
 
+  const handleAddNote = () => {
+    setNoteError(null);
+    const trimmed = noteInput.trim();
+    if (!trimmed) {
+      setNoteError("Write a note before saving.");
+      return;
+    }
+    const now = new Date().toISOString();
+    const newNote: Note = {
+      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      content: trimmed,
+      createdAt: now,
+      updatedAt: now,
+    };
+    setNotes((prev) => [newNote, ...prev]);
+    setNoteInput("");
+  };
+
+  const handleDeleteNote = (noteId: string) => {
+    setNotes((prev) => prev.filter((note) => note.id !== noteId));
+    if (editingNoteId === noteId) {
+      setEditingNoteId(null);
+      setEditingContent("");
+    }
+  };
+
+  const handleStartEdit = (note: Note) => {
+    setEditingNoteId(note.id);
+    setEditingContent(note.content);
+  };
+
+  const handleSaveEdit = () => {
+    if (!editingNoteId) return;
+    const trimmed = editingContent.trim();
+    if (!trimmed) {
+      setNoteError("Note cannot be empty.");
+      return;
+    }
+    const now = new Date().toISOString();
+    setNotes((prev) =>
+      prev.map((note) =>
+        note.id === editingNoteId
+          ? { ...note, content: trimmed, updatedAt: now }
+          : note,
+      ),
+    );
+    setEditingNoteId(null);
+    setEditingContent("");
+  };
+
+  const handleCancelEdit = () => {
+    setEditingNoteId(null);
+    setEditingContent("");
+  };
+
+  const handleNoteFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    setNoteError(null);
+    try {
+      if (file.name.toLowerCase().endsWith(".txt")) {
+        const text = await file.text();
+        setNoteInput(text.trim());
+      } else if (file.name.toLowerCase().endsWith(".docx")) {
+        const buffer = await file.arrayBuffer();
+        const result = await mammoth.extractRawText({ arrayBuffer: buffer });
+        setNoteInput(result.value.trim());
+      } else {
+        setNoteError("Unsupported file type. Upload a .txt or .docx file.");
+      }
+    } catch (error) {
+      console.error("Failed to parse note file:", error);
+      setNoteError("Unable to parse that file. Try a plain .txt or .docx file.");
+    } finally {
+      event.target.value = "";
+    }
+  };
+
   return (
     <main className="dark relative min-h-screen overflow-hidden bg-slate-950 text-slate-100">
       <div className="pointer-events-none absolute inset-0">
@@ -798,6 +905,13 @@ const Dashboard = () => {
                 >
                   <Building2 className="h-4 w-4" />
                   {organizationLabel ? `Hospital: ${organizationLabel}` : "Hospital"}
+                </a>
+                <a
+                  href="#notes"
+                  className="flex items-center gap-2 rounded-lg px-3 py-2 text-muted-foreground hover:bg-muted/50 hover:text-foreground"
+                >
+                  <Grid3X3 className="h-4 w-4" />
+                  Notes
                 </a>
               </nav>
 
@@ -1271,6 +1385,124 @@ const Dashboard = () => {
                           </div>
                         )}
                       </>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.section>
+
+            <motion.section
+              id="notes"
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, ease: "easeOut", delay: 0.6 }}
+              className="mt-10"
+            >
+              <Card className="border-white/10 bg-slate-900/70">
+                <CardHeader>
+                  <CardTitle>Operational Notes</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="space-y-3">
+                    <Label htmlFor="note-input">New note</Label>
+                    <textarea
+                      id="note-input"
+                      value={noteInput}
+                      onChange={(event) => setNoteInput(event.target.value)}
+                      placeholder="Write observations, congestion risks, or layout concerns..."
+                      className="min-h-[120px] w-full rounded-xl border border-white/15 bg-slate-950/60 p-3 text-sm text-white placeholder:text-white/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60"
+                    />
+                    <div className="flex flex-wrap items-center gap-3">
+                      <Button
+                        className="bg-emerald-300 text-slate-900 hover:bg-emerald-200"
+                        onClick={handleAddNote}
+                      >
+                        Save note
+                      </Button>
+                      <label className="inline-flex cursor-pointer items-center rounded-full border border-white/25 px-5 py-2 text-xs uppercase tracking-[0.25em] text-white/70 transition hover:border-white/50 hover:text-white">
+                        Upload
+                        <input
+                          type="file"
+                          accept=".txt,.docx"
+                          onChange={handleNoteFileUpload}
+                          className="hidden"
+                        />
+                      </label>
+                    </div>
+                    {noteError ? (
+                      <p className="text-sm text-destructive">{noteError}</p>
+                    ) : null}
+                  </div>
+
+                  <div className="space-y-4">
+                    {notes.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        No notes yet. Add observations to track congestion findings and layout decisions.
+                      </p>
+                    ) : (
+                      notes.map((note) => (
+                        <div
+                          key={note.id}
+                          className="rounded-2xl border border-white/10 bg-slate-950/60 p-4"
+                        >
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-xs uppercase tracking-[0.3em] text-white/50">
+                              {new Date(note.updatedAt).toLocaleString()}
+                            </p>
+                            <div className="flex flex-wrap gap-2">
+                              {editingNoteId === note.id ? (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    className="bg-emerald-300 text-slate-900 hover:bg-emerald-200"
+                                    onClick={handleSaveEdit}
+                                  >
+                                    Save
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="border-white/30 text-white hover:border-white/60 hover:bg-white/10"
+                                    onClick={handleCancelEdit}
+                                  >
+                                    Cancel
+                                  </Button>
+                                </>
+                              ) : (
+                                <>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="border-white/30 text-white hover:border-white/60 hover:bg-white/10"
+                                    onClick={() => handleStartEdit(note)}
+                                  >
+                                    Edit
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="border-rose-400/60 text-rose-200 hover:border-rose-300 hover:bg-rose-400/10"
+                                    onClick={() => handleDeleteNote(note.id)}
+                                  >
+                                    Close
+                                  </Button>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          {editingNoteId === note.id ? (
+                            <textarea
+                              value={editingContent}
+                              onChange={(event) => setEditingContent(event.target.value)}
+                              className="mt-4 min-h-[120px] w-full rounded-xl border border-white/15 bg-slate-900/60 p-3 text-sm text-white placeholder:text-white/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300/60"
+                            />
+                          ) : (
+                            <p className="mt-4 whitespace-pre-wrap text-sm text-white/80">
+                              {note.content}
+                            </p>
+                          )}
+                        </div>
+                      ))
                     )}
                   </div>
                 </CardContent>
