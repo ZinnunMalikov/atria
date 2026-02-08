@@ -967,7 +967,7 @@ const Dashboard = () => {
                     onClick={() => navigate("/build-layout")}
                   >
                     <Grid3X3 className="h-4 w-4" />
-                    Build Your Own Layout
+                    Build Layout
                   </Button>
                   <p className="mt-1 text-[10px] text-muted-foreground">
                     Design a custom hospital floor plan
