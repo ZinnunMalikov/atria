@@ -9,6 +9,7 @@ import {
   Video,
   CheckCircle,
   AlertCircle,
+  Grid3X3,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -242,6 +243,15 @@ function parseHospitalConfigFile(content: string): SimulationConfig | null {
   }
 }
 
+// Helper function to create MCI config from standard config
+// MCI mode keeps the same room layout but with increased capacity and faster arrivals
+function getMCIConfig(standardConfig: SimulationConfig): SimulationConfig {
+  // Return the same config - room types stay unchanged
+  // The MCI mode behavior (2 patients per high-severity room, faster arrivals)
+  // is handled in the HeatmapSimulation component
+  return standardConfig;
+}
+
 const Dashboard = () => {
   const navigate = useNavigate();
   const [organization, setOrganization] = useState("");
@@ -250,6 +260,7 @@ const Dashboard = () => {
   const [role, setRole] = useState("");
   const [simulationConfig, setSimulationConfig] = useState<SimulationConfig | undefined>(undefined);
   const [uploadStatus, setUploadStatus] = useState<UploadStatus>(null);
+  const [customConfigLoaded, setCustomConfigLoaded] = useState(false);
 
   const normalizedOrganization = organization.trim().toLowerCase();
   const organizationKey = useMemo(() => {
@@ -315,6 +326,24 @@ const Dashboard = () => {
     const storedRole = localStorage.getItem("atria:role") ?? "";
     setDisplayName(storedName || storedEmail);
     setRole(storedRole || "ER Specialist");
+
+    // Check for custom simulation config from layout builder
+    const customConfigStr = localStorage.getItem("atria:customSimulationConfig");
+    if (customConfigStr && !customConfigLoaded) {
+      try {
+        const customConfig = JSON.parse(customConfigStr);
+        setSimulationConfig(customConfig);
+        setCustomConfigLoaded(true);
+        setUploadStatus({
+          type: "success",
+          message: "Custom hospital layout loaded successfully. Simulation ready to run!",
+        });
+        // Clear the stored config after loading
+        localStorage.removeItem("atria:customSimulationConfig");
+      } catch (err) {
+        console.error("Failed to load custom config:", err);
+      }
+    }
 
     // Load uploads from Supabase
     const loadUploads = async () => {
@@ -383,7 +412,7 @@ const Dashboard = () => {
     };
 
     void loadProfile();
-  }, []);
+  }, [customConfigLoaded]);
 
   const formattedName = useMemo(() => {
     if (!displayName) return "Dr. Clinician";
@@ -767,8 +796,29 @@ const Dashboard = () => {
 
               <div className="mt-6 border-t border-border/60 pt-5">
                 <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Inputs
+                  Layout Configuration
                 </p>
+
+                {/* Build Your Own Layout Option */}
+                <div className="mt-3">
+                  <Button
+                    variant="outline"
+                    className="w-full justify-start gap-2 border-white/15 bg-slate-950/60 text-white hover:bg-slate-950/80 hover:text-emerald-300"
+                    onClick={() => navigate("/build-layout")}
+                  >
+                    <Grid3X3 className="h-4 w-4" />
+                    Build Your Own Layout
+                  </Button>
+                  <p className="mt-1 text-[10px] text-muted-foreground">
+                    Design a custom hospital floor plan
+                  </p>
+                </div>
+
+                <div className="mt-4 flex items-center gap-2">
+                  <div className="h-px flex-1 bg-white/10" />
+                  <span className="text-[10px] text-white/40">or upload</span>
+                  <div className="h-px flex-1 bg-white/10" />
+                </div>
 
                 {/* Hospital Config File Upload */}
                 <div className="mt-3">
@@ -826,11 +876,25 @@ const Dashboard = () => {
 
                 {/* Current config indicator */}
                 {simulationConfig && (
-                  <div className="mt-3 rounded-lg border border-border/60 bg-muted/30 p-2 text-xs">
-                    <p className="font-medium text-foreground">Custom Config Active</p>
-                    <p className="text-muted-foreground">
-                      {simulationConfig.hospital.length}x{simulationConfig.hospital[0].length} grid
+                  <div className="mt-3 rounded-lg border border-green-500/60 bg-green-500/20 p-3 text-xs">
+                    <p className="font-medium text-green-200">Custom Layout Active</p>
+                    <p className="text-green-300/80">
+                      {simulationConfig.hospital.length}x{simulationConfig.hospital[0].length} grid with{" "}
+                      {simulationConfig.lowSeverityRooms.length} low-severity and{" "}
+                      {simulationConfig.highSeverityRooms.length} high-severity rooms
                     </p>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setSimulationConfig(undefined);
+                        setCustomConfigLoaded(false);
+                        setUploadStatus(null);
+                      }}
+                      className="mt-2 h-6 text-[10px] text-green-300 hover:bg-green-500/30 hover:text-green-100"
+                    >
+                      Clear Custom Layout
+                    </Button>
                   </div>
                 )}
               </div>
@@ -1000,7 +1064,38 @@ const Dashboard = () => {
                   Live
                 </span>
               </div>
-              <HeatmapSimulation config={simulationConfig} />
+
+              {simulationConfig ? (
+                <div className="space-y-8">
+                  <HeatmapSimulation
+                    config={simulationConfig}
+                    mode="standard"
+                    label="Standard Simulation"
+                  />
+                  <HeatmapSimulation
+                    config={getMCIConfig(simulationConfig)}
+                    mode="mci"
+                    label="MCI / Pandemic Simulation"
+                  />
+                </div>
+              ) : (
+                <Card className="w-full">
+                  <CardContent className="flex flex-col items-center justify-center py-16">
+                    <div className="text-center">
+                      <h3 className="text-xl font-semibold text-foreground mb-2">No Layout Loaded</h3>
+                      <p className="text-muted-foreground mb-6">
+                        Build a custom hospital layout to run simulations
+                      </p>
+                      <Button
+                        onClick={() => navigate("/build-layout")}
+                        className="bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-700 hover:to-emerald-600"
+                      >
+                        Build Layout
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
             </motion.section>
 
             <motion.section
