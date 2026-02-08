@@ -6,8 +6,8 @@ const Index = () => {
         <div className="relative z-10">
           <header className="mx-auto flex w-full max-w-6xl items-center px-6 py-6">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/10 text-sm font-semibold tracking-[0.2em]">
-                AF
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/10">
+                <img src="/atria-logo.png" alt="Atria logo" className="h-7 w-7 object-contain" />
               </div>
               <div>
                 <p className="text-sm uppercase tracking-[0.35em] text-white/60">Atria</p>
@@ -27,9 +27,6 @@ const Index = () => {
               >
                 Client Login
               </a>
-              <button className="rounded-full bg-white px-5 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-900 transition hover:bg-white/90">
-                Request Review
-              </button>
             </div>
           </header>
 
@@ -78,43 +75,28 @@ const Index = () => {
                 <div className="absolute -inset-6 rounded-[32px] bg-emerald-400/20 blur-3xl" aria-hidden="true" />
                 <div className="relative overflow-hidden rounded-[28px] border border-white/15 bg-slate-900/70 p-6 shadow-[0_35px_120px_-60px_rgba(16,185,129,0.65)]">
                   <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-white/60">
-                    <span>Simulation Canvas</span>
+                    <span>Hospital Layout Grid</span>
                     <span className="rounded-full border border-white/15 px-3 py-1 text-[10px] text-white/50">Live</span>
                   </div>
                   <div className="mt-6 rounded-2xl border border-white/10 bg-slate-950/60 p-4">
-                    <svg
-                      className="h-64 w-full"
-                      viewBox="0 0 420 260"
-                      fill="none"
-                      aria-label="Stylized hospital layout with heatmap"
+                    <div
+                      className="relative grid h-64 w-full grid-cols-7 grid-rows-5 gap-2 rounded-2xl border border-white/10 bg-slate-950/70 p-3"
+                      aria-label="Hospital layout grid with congestion hotspots"
                     >
-                      <rect x="12" y="12" width="396" height="236" rx="22" fill="#0f172a" />
-                      <path d="M40 58H140L190 98H320" stroke="#38bdf8" strokeWidth="4" strokeLinecap="round" />
-                      <path d="M60 150H150L210 120H330" stroke="#38bdf8" strokeWidth="4" strokeLinecap="round" />
-                      <path d="M90 210H190L240 180H350" stroke="#38bdf8" strokeWidth="4" strokeLinecap="round" />
-                      <circle cx="140" cy="58" r="10" fill="#22c55e" />
-                      <circle cx="190" cy="98" r="10" fill="#22c55e" />
-                      <circle cx="150" cy="150" r="10" fill="#22c55e" />
-                      <circle cx="210" cy="120" r="10" fill="#22c55e" />
-                      <circle cx="190" cy="210" r="10" fill="#22c55e" />
-                      <rect x="240" y="78" width="90" height="60" rx="16" fill="#f97316" opacity="0.6" />
-                      <rect x="250" y="170" width="110" height="50" rx="16" fill="#ef4444" opacity="0.55" />
-                      <g opacity="0.8">
-                        <circle cx="240" cy="78" r="22" fill="#f97316" opacity="0.55" />
-                        <circle cx="260" cy="88" r="16" fill="#f97316" opacity="0.45" />
-                        <circle cx="270" cy="186" r="24" fill="#ef4444" opacity="0.45" />
-                      </g>
-                      <g className="acuity-clump">
-                        <circle cx="100" cy="58" r="6" fill="#fbbf24" />
-                        <circle cx="112" cy="52" r="4" fill="#fbbf24" />
-                        <circle cx="108" cy="66" r="4" fill="#fbbf24" />
-                      </g>
-                      <g className="acuity-clump acuity-delay">
-                        <circle cx="250" cy="150" r="6" fill="#fbbf24" />
-                        <circle cx="262" cy="144" r="4" fill="#fbbf24" />
-                        <circle cx="258" cy="160" r="4" fill="#fbbf24" />
-                      </g>
-                    </svg>
+                      {Array.from({ length: 35 }).map((_, index) => {
+                        const isHotspot = [3, 10, 18, 24, 31].includes(index);
+                        return (
+                          <div
+                            key={index}
+                            className={`rounded-lg border ${
+                              isHotspot
+                                ? "border-emerald-300/60 bg-emerald-300/20 shadow-[0_0_24px_rgba(52,211,153,0.35)]"
+                                : "border-white/10 bg-slate-900/60"
+                            }`}
+                          />
+                        );
+                      })}
+                    </div>
                   </div>
                   <div className="mt-6 grid gap-4 text-xs text-white/60 sm:grid-cols-3">
                     <div className="rounded-xl border border-white/10 bg-white/5 p-3">
