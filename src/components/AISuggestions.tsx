@@ -269,7 +269,7 @@ export function AISuggestions({ standardResults, mciResults }: AISuggestionsProp
             ],
             generationConfig: {
               temperature: 0.7,
-              maxOutputTokens: 10000,
+              maxOutputTokens: 4000,
             },
           }),
         }

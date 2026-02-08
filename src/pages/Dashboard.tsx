@@ -285,6 +285,7 @@ const Dashboard = () => {
   const [editingTargetType, setEditingTargetType] = useState<Note["targetType"]>("Corridor");
   const [editingTargetId, setEditingTargetId] = useState("");
   const [noteError, setNoteError] = useState<string | null>(null);
+  const [noteSummaries, setNoteSummaries] = useState<Record<string, { summary: string; insights: string; loading: boolean }>>({});
 
   const normalizedOrganization = organization.trim().toLowerCase();
   const organizationKey = useMemo(() => {
@@ -896,6 +897,94 @@ const Dashboard = () => {
       setNoteError("Unable to parse that file. Try a plain .txt or .docx file.");
     } finally {
       event.target.value = "";
+    }
+  };
+
+  const handleGenerateSummary = async (note: Note) => {
+    setNoteSummaries((prev) => ({
+      ...prev,
+      [note.id]: { summary: "", insights: "", loading: true },
+    }));
+
+    try {
+      const apiKey = import.meta.env.VITE_K2THINK_API_KEY;
+
+      if (!apiKey) {
+        throw new Error("K2 Think API key not found. Please set VITE_K2THINK_API_KEY in your .env file.");
+      }
+
+      // Generate summary
+      const summaryPrompt = `You are a medical note summarizer. Summarize the following clinical note in 2-3 concise sentences, focusing on key observations and findings:\n\n${note.content}`;
+
+      const summaryResponse = await fetch("https://api.k2think.ai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "accept": "application/json",
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "MBZUAI-IFM/K2-Think-v2",
+          messages: [
+            {
+              role: "user",
+              content: summaryPrompt,
+            },
+          ],
+          stream: false,
+        }),
+      });
+
+      if (!summaryResponse.ok) {
+        throw new Error("Failed to generate summary");
+      }
+
+      const summaryData = await summaryResponse.json();
+      const summary = summaryData.choices?.[0]?.message?.content || "Unable to generate summary";
+
+      // Generate insights
+      const insightsPrompt = `You are a healthcare operations analyst. Based on the following clinical note about ${note.targetType} "${note.targetId}", provide 3 actionable insights or recommendations for improving patient flow, safety, or efficiency:\n\n${note.content}`;
+
+      const insightsResponse = await fetch("https://api.k2think.ai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "accept": "application/json",
+          "Authorization": `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "MBZUAI-IFM/K2-Think-v2",
+          messages: [
+            {
+              role: "user",
+              content: insightsPrompt,
+            },
+          ],
+          stream: false,
+        }),
+      });
+
+      if (!insightsResponse.ok) {
+        throw new Error("Failed to generate insights");
+      }
+
+      const insightsData = await insightsResponse.json();
+      const insights = insightsData.choices?.[0]?.message?.content || "Unable to generate insights";
+
+      setNoteSummaries((prev) => ({
+        ...prev,
+        [note.id]: { summary, insights, loading: false },
+      }));
+    } catch (error) {
+      console.error("Failed to generate summary:", error);
+      setNoteSummaries((prev) => ({
+        ...prev,
+        [note.id]: {
+          summary: "Error generating summary",
+          insights: error instanceof Error ? error.message : "An error occurred",
+          loading: false
+        },
+      }));
     }
   };
 
@@ -1593,9 +1682,61 @@ const Dashboard = () => {
                               />
                             </div>
                           ) : (
-                            <p className="mt-4 whitespace-pre-wrap text-sm text-white/80">
-                              {note.content}
-                            </p>
+                            <>
+                              <p className="mt-4 whitespace-pre-wrap text-sm text-white/80">
+                                {note.content}
+                              </p>
+
+                              {/* AI Summary & Insights Section */}
+                              <div className="mt-4 space-y-3 border-t border-white/10 pt-4">
+                                {!noteSummaries[note.id] ? (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="border-emerald-300/50 text-emerald-300 hover:bg-emerald-300/10 hover:border-emerald-300"
+                                    onClick={() => handleGenerateSummary(note)}
+                                  >
+                                    Generate AI Summary & Insights
+                                  </Button>
+                                ) : noteSummaries[note.id].loading ? (
+                                  <div className="flex items-center gap-3 py-4">
+                                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-emerald-300 border-t-transparent" />
+                                    <p className="text-xs text-white/60">
+                                      Analyzing note with K2 Think AI...
+                                    </p>
+                                  </div>
+                                ) : (
+                                  <div className="space-y-3">
+                                    <div className="rounded-lg border border-emerald-300/30 bg-emerald-300/5 p-3">
+                                      <p className="text-xs font-semibold uppercase tracking-wide text-emerald-300 mb-2">
+                                        Summary
+                                      </p>
+                                      <p className="text-sm text-white/90 leading-relaxed">
+                                        {noteSummaries[note.id].summary}
+                                      </p>
+                                    </div>
+
+                                    <div className="rounded-lg border border-blue-300/30 bg-blue-300/5 p-3">
+                                      <p className="text-xs font-semibold uppercase tracking-wide text-blue-300 mb-2">
+                                        Insights & Recommendations
+                                      </p>
+                                      <div className="text-sm text-white/90 leading-relaxed whitespace-pre-wrap">
+                                        {noteSummaries[note.id].insights}
+                                      </div>
+                                    </div>
+
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="text-xs text-white/50 hover:text-white/70"
+                                      onClick={() => handleGenerateSummary(note)}
+                                    >
+                                      Regenerate Analysis
+                                    </Button>
+                                  </div>
+                                )}
+                              </div>
+                            </>
                           )}
                         </div>
                       ))
