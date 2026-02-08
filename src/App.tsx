@@ -13,6 +13,7 @@ import RequireAuth from "./components/RequireAuth";
 import PrivacyPolicy from "./pages/PrivacyPolicy";
 import TermsOfService from "./pages/TermsOfService";
 import LearnMore from "./pages/LearnMore";
+import HospitalLayoutBuilder from "./pages/HospitalLayoutBuilder";
 
 const queryClient = new QueryClient();
 
@@ -52,6 +53,14 @@ const App = () => (
           <Route path="/privacy" element={<PrivacyPolicy />} />
           <Route path="/terms" element={<TermsOfService />} />
           <Route path="/learn-more" element={<LearnMore />} />
+          <Route
+            path="/build-layout"
+            element={
+              <RequireAuth>
+                <HospitalLayoutBuilder />
+              </RequireAuth>
+            }
+          />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
