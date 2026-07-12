@@ -17,12 +17,20 @@ import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { HeatmapSimulation, type SimulationConfig, type SimulationResults } from "@/components/HeatmapSimulation";
 import { AISuggestions } from "@/components/AISuggestions";
+import { ChatAssistant } from "@/components/ChatAssistant";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { supabase } from "@/lib/supabase";
 import mammoth from "mammoth/mammoth.browser";
 
@@ -265,7 +273,11 @@ function getMCIConfig(standardConfig: SimulationConfig): SimulationConfig {
   return standardConfig;
 }
 
-const Dashboard = () => {
+type DashboardProps = {
+  isDemo?: boolean;
+};
+
+const Dashboard = ({ isDemo = false }: DashboardProps) => {
   const navigate = useNavigate();
   const [organization, setOrganization] = useState("");
   const [uploads, setUploads] = useState<HospitalUpload[]>([]);
@@ -344,13 +356,19 @@ const Dashboard = () => {
   const statsData = getStatsForHospital();
 
   useEffect(() => {
-    const storedOrg = localStorage.getItem("atria:org") ?? "";
-    setOrganization(storedOrg);
-    const storedEmail = localStorage.getItem("atria:email") ?? "";
-    const storedName = localStorage.getItem("atria:displayName") ?? "";
-    const storedRole = localStorage.getItem("atria:role") ?? "";
-    setDisplayName(storedName || storedEmail);
-    setRole(storedRole || "ER Specialist");
+    if (isDemo) {
+      setOrganization("");
+      setDisplayName("Demo Visitor");
+      setRole("Guest Preview");
+    } else {
+      const storedOrg = localStorage.getItem("atria:org") ?? "";
+      setOrganization(storedOrg);
+      const storedEmail = localStorage.getItem("atria:email") ?? "";
+      const storedName = localStorage.getItem("atria:displayName") ?? "";
+      const storedRole = localStorage.getItem("atria:role") ?? "";
+      setDisplayName(storedName || storedEmail);
+      setRole(storedRole || "ER Specialist");
+    }
 
     // Check for custom simulation config from layout builder
     const customConfigStr = localStorage.getItem("atria:customSimulationConfig");
@@ -418,6 +436,8 @@ const Dashboard = () => {
 
     loadUploads();
 
+    if (isDemo) return;
+
     const loadProfile = async () => {
       const {
         data: { user },
@@ -439,7 +459,7 @@ const Dashboard = () => {
     };
 
     void loadProfile();
-  }, [customConfigLoaded]);
+  }, [customConfigLoaded, isDemo]);
 
   useEffect(() => {
     const storedNotes = localStorage.getItem("atria:notes");
@@ -489,6 +509,10 @@ const Dashboard = () => {
   }, [displayName]);
 
   const handleLogout = async () => {
+    if (isDemo) {
+      navigate("/");
+      return;
+    }
     await supabase.auth.signOut();
     navigate("/login");
   };
@@ -1160,13 +1184,19 @@ const Dashboard = () => {
                       </button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="start" side="top">
-                      <DropdownMenuItem onSelect={() => navigate("/settings/profile")}>
-                        Edit profile
+                      {!isDemo && (
+                        <>
+                          <DropdownMenuItem onSelect={() => navigate("/settings/profile")}>
+                            Edit profile
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onSelect={() => navigate("/settings/2fa")}>
+                            Enable 2FA
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                      <DropdownMenuItem onSelect={handleLogout}>
+                        {isDemo ? "Exit demo" : "Log out"}
                       </DropdownMenuItem>
-                      <DropdownMenuItem onSelect={() => navigate("/settings/2fa")}>
-                        Enable 2FA
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onSelect={handleLogout}>Log out</DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
@@ -1215,6 +1245,38 @@ const Dashboard = () => {
                 </DropdownMenu>
               </div>
             </motion.div>
+
+            {isDemo && (
+              <motion.div
+                initial={{ opacity: 0, y: 16 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.6, ease: "easeOut" }}
+                className="mb-8 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-emerald-300/30 bg-emerald-300/10 p-4"
+              >
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.25em] text-emerald-200">
+                    Demo mode
+                  </p>
+                  <p className="mt-1 text-sm text-white/80">
+                    You're viewing sample data with no account required. Pick a hospital to explore its layout.
+                  </p>
+                </div>
+                <div className="w-full max-w-xs">
+                  <Select value={organization} onValueChange={setOrganization}>
+                    <SelectTrigger className="border-white/15 bg-slate-950/60 text-white focus:ring-emerald-300/60">
+                      <SelectValue placeholder="Select a sample hospital" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="northside">Northside Hospital</SelectItem>
+                      <SelectItem value="mount-sinai">Mount Sinai</SelectItem>
+                      <SelectItem value="johns-hopkins">Johns Hopkins</SelectItem>
+                      <SelectItem value="cleveland-clinic">Cleveland Clinic</SelectItem>
+                      <SelectItem value="mass-general">Mass General</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </motion.div>
+            )}
 
             <Card className="mb-10 w-full max-w-xl border-white/10 bg-gradient-to-br from-emerald-300/15 via-slate-900/70 to-transparent">
               <CardHeader>
@@ -1748,6 +1810,7 @@ const Dashboard = () => {
           </div>
         </div>
       </div>
+      <ChatAssistant />
     </main>
   );
 };

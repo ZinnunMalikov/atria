@@ -75,6 +75,12 @@ const Index = () => {
             </nav>
             <div className="ml-auto hidden items-center gap-3 md:flex">
               <a
+                className="rounded-full bg-emerald-300 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-slate-900 transition hover:bg-emerald-200"
+                href="/demo"
+              >
+                View Demo
+              </a>
+              <a
                 className="rounded-full border border-white/20 px-4 py-2 text-xs uppercase tracking-[0.2em] text-white/70 transition hover:border-white/50 hover:text-white"
                 href="/login"
               >
@@ -87,7 +93,7 @@ const Index = () => {
             <section className="mx-auto grid w-full max-w-6xl gap-12 px-6 pb-16 pt-10 lg:grid-cols-[1.1fr_0.9fr] lg:items-center">
               <div className="space-y-8">
                 <div className="inline-flex items-center gap-3 rounded-full border border-white/15 bg-white/10 px-4 py-2 text-xs uppercase tracking-[0.25em] text-white/70">
-                  Built for surge modeling
+                  Built for hospital communities everywhere
                   <span className="h-2 w-2 rounded-full bg-emerald-300 animate-pulse" />
                 </div>
                 <div className="space-y-6">
@@ -98,6 +104,12 @@ const Index = () => {
                     Most hospital simulations focus on waiting time or bed occupancy. Atria models the dynamic
                     congestion inside corridors where patient transfers, staff, and equipment collide. We treat movement as
                     acuity clumps and stress-test layout resilience before a single wall is built.
+                  </p>
+                  <p className="text-base text-white/60">
+                    From large academic medical centers to rural critical-access hospitals and safety-net community
+                    clinics, every facility deserves layout decisions grounded in real surge behavior — not just square
+                    footage. Atria is built to be accessible to hospital communities everywhere, regardless of size,
+                    budget, or region.
                   </p>
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
@@ -459,6 +471,13 @@ const Index = () => {
                   Atria is designed for early design reviews. Run surge scenarios, validate corridor sizing, and identify
                   high-friction zones long before a hospital opens its doors.
                 </p>
+                <p className="mt-4 max-w-3xl text-white/70">
+                  Our mission is to make that kind of rigor available to hospital communities everywhere — not just
+                  well-funded flagship campuses. A rural critical-access hospital planning a small ED expansion, a
+                  community clinic retrofitting an aging building, and a large academic medical center designing a new
+                  wing all face the same underlying question: will this layout hold up when volume spikes? Atria gives
+                  every one of them the same surge-tested answer.
+                </p>
                 <div className="mt-8 flex flex-wrap gap-4">
                   <span className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-xs uppercase tracking-[0.25em] text-white/70">
                     Pre-construction validation
@@ -468,6 +487,9 @@ const Index = () => {
                   </span>
                   <span className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-xs uppercase tracking-[0.25em] text-white/70">
                     Clinical operations alignment
+                  </span>
+                  <span className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-xs uppercase tracking-[0.25em] text-white/70">
+                    Accessible to hospitals of any size
                   </span>
                 </div>
               </div>
@@ -498,7 +520,8 @@ const Index = () => {
               <div>
                 <p className="font-semibold text-white">Atria</p>
                 <p className="mt-2 max-w-sm text-white/50">
-                  Hospital layout intelligence for surge-ready design decisions.
+                  Hospital layout intelligence for surge-ready design decisions — built for hospital communities
+                  everywhere.
                 </p>
               </div>
               <div className="flex flex-wrap gap-6 text-xs uppercase tracking-[0.3em]">
